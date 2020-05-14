@@ -63,9 +63,6 @@ typedef enum {
     /* Active */
     STATE_RUNNING,
 
-    /* Change has finished */
-    STATE_DEAD,
-
     /* Mask to get the state */
     STATE_MASK = 0x0000ff,
 
@@ -77,9 +74,6 @@ typedef enum {
 
     /* Affect the fields only once at the end of the duration period */
     FLAG_AFTER = 1 << 10,
-
-    /* The change has been released in Lua land */
-    FLAG_COLLECTED = 1 << 11,
 
     /* Mask to get the ease function */
     EASE_MASK = 0xff0000
@@ -114,7 +108,10 @@ struct change_t {
     lua_Number elapsed_time;
 
     /* In what state this change is, and its flags */
-    state_t state;
+    unsigned state;
+
+    /* The change tag to differentiate living and dead changes apart */
+    unsigned tag;
 
     /* The reference to the object that keeps the fields */
     int table_ref;
@@ -137,6 +134,22 @@ struct change_t {
 typedef struct {
     /* The index of the change in the s_changes array */
     size_t change_index;
+
+    /**
+     * Tags are used to prevent long living references to dead changes in Lua
+     * land from locking an entry in s_changes until they are garbage
+     * collected.
+     * 
+     * When a change is allocated from s_changes, the tag below is set to the
+     * tag in s_changes. When a change finishes and the entry in s_changes is
+     * made available for reuse, the tag there is incremented.
+     * 
+     * When we receive a reference to a change from Lua, the tags are
+     * compared. If they're equal, it's a valid reference. If they're
+     * different, the change has already finished and the reference is treated
+     * as a valid reference to a dead change.
+     */
+    unsigned change_tag;
 }
 userdata_t;
 
@@ -217,11 +230,18 @@ static change_t* alloc(void) {
 
     /* Grab an unused element in the array */
     change_t* const change = s_changes + s_num_changes++;
+
+    /* Set the tag to 0 on freshly allocated changes */
+    change->tag = 0;
+
     return change;
 }
 
 /* Deallocates a change */
 static void free_change(lua_State* const L, change_t* const change) {
+    /* Increment the tag so that any existing references are considered dead */
+    change->tag++;
+
     /* Put the change in the free list */
     change->u.next_free = s_free;
     s_free = change;
@@ -241,14 +261,21 @@ static void free_change(lua_State* const L, change_t* const change) {
 static change_t* check(lua_State* const L, int index) {
     /* Get the change from the array according to the userdata */
     userdata_t* const ud = (userdata_t*)luaL_checkudata(L, 1, "change");
-    return s_changes + ud->change_index;
+    change_t* const change = s_changes + ud->change_index;
+
+    /* A change is only valid if its tag matches the one from the reference */
+    if (change->tag == ud->change_tag) {
+        return change;
+    }
+
+    return NULL;
 }
 
 /* Starts a paused change */
 static int start(lua_State* const L) {
     change_t* const change = check(L, 1);
 
-    if ((change->state & STATE_MASK) == STATE_PAUSED) {
+    if (change != NULL && (change->state & STATE_MASK) == STATE_PAUSED) {
         /* Make it run */
         change->state &= ~STATE_MASK;
         change->state |= STATE_RUNNING;
@@ -264,19 +291,31 @@ static int start(lua_State* const L) {
 /* Kills a running change */
 static int kill(lua_State* const L) {
     change_t* const change = check(L, 1);
-    change->state = STATE_DEAD;
-    return 0;
+
+    if (change != NULL) {
+        free_change(L, change);
+        return 0;
+    }
+    else {
+        lua_pushnil(L);
+        lua_pushliteral(L, "change is already dead");
+        return 2;
+    }
 }
 
 /* Returns the status of a change */
 static int status(lua_State* const L) {
     change_t* const change = check(L, 1);
 
+    if (change == NULL) {
+        lua_pushliteral(L, "dead");
+        return 1;
+    }
+
     switch (change->state & STATE_MASK) {
-        case STATE_UNUSED: /* -> Should never happen */
-        case STATE_DEAD: {
-            lua_pushliteral(L, "dead");
-            return 1;
+        case STATE_UNUSED: {
+            /* Should never happen */
+            return luaL_error(L, "reference to an unused change");
         }
 
         case STATE_PAUSED: {
@@ -292,19 +331,21 @@ static int status(lua_State* const L) {
     }
 
     /* New state added, add it to the above switch */
-    return luaL_error(L, "invalid state");
+    return luaL_error(L, "unhandled state in :status()");
 }
 
 /* Cleans-up a change collected during a Lua GC cycle */
 static int gc(lua_State* const L) {
     change_t* const change = check(L, 1);
-    state_t const state = change->state & STATE_MASK;
 
-    if (state == STATE_DEAD || state == STATE_PAUSED) {
+    if (change != NULL && (change->state & STATE_MASK) == STATE_PAUSED) {
+        /**
+         * Only free changes here if they are paused, since there are no
+         * references to it left in Lua land and they cannot be started
+         * anymore. Other changes that are active will run to completion and
+         * be freed inside the update function.
+         */
         free_change(L, change);
-    }
-    else {
-        change->state |= FLAG_COLLECTED;
     }
 
     return 0;
@@ -315,7 +356,7 @@ static int tostring(lua_State* const L) {
     userdata_t* const ud = (userdata_t*)luaL_checkudata(L, 1, "change");
 
     char str[64];
-    int const len = snprintf(str, sizeof(str), "change(%zu)", ud->change_index);
+    int const len = snprintf(str, sizeof(str), "change(%zu,%u)", ud->change_index, ud->change_tag);
 
     lua_pushlstring(L, str, len);
     return 1;
@@ -343,12 +384,7 @@ static int create(lua_State* const L, int const to) {
         size_t const max_fields = sizeof(change->delta_values) / sizeof(change->delta_values[0]);
 
         /* Walk the stack */
-        for (;; stack_index += 2, num_fields++) {
-            if (lua_type(L, stack_index) != LUA_TSTRING) {
-                /* We've reached the end of the <name, value> pairs */
-                break;
-            }
-
+        for (; lua_type(L, stack_index) == LUA_TSTRING; stack_index += 2, num_fields++) {
             if (num_fields == max_fields) {
                 free_change(L, change);
 
@@ -449,6 +485,7 @@ static int create(lua_State* const L, int const to) {
     /* Create and initialize the userdata object */
     userdata_t* const ud = (userdata_t*)lua_newuserdata(L, sizeof(*ud));
     ud->change_index = change - s_changes;
+    ud->change_tag = change->tag;
 
     /* Set the userdata's metatable */
     if (luaL_newmetatable(L, "change")) {
@@ -551,11 +588,8 @@ static int update(lua_State* const L) {
             if (change->state & FLAG_REPEAT) {
                 change->elapsed_time -= change->duration;
             }
-            else if (change->state & FLAG_COLLECTED) {
-                free_change(L, change);
-            }
             else {
-                change->state = STATE_DEAD;
+                free_change(L, change);
             }
         }
     }
