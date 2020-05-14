@@ -405,6 +405,8 @@ static int create(lua_State* const L, int const to) {
 
             change->delta_values[num_fields] = by;
         }
+
+        *aux = 0;
     }
 
     /* After the <name, value> pairs comes the change duration in seconds */
