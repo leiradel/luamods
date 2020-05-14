@@ -611,6 +611,14 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
         {"AFTER", FLAG_AFTER}
     };
 
+    static struct {char const* name; char const* value;} info[] = {
+        {"_COPYRIGHT", "Copyright (c) 2020 Andre Leiradella"},
+        {"_LICENSE", "MIT"},
+        {"_VERSION", "1.1"},
+        {"_NAME", "changeme"},
+        {"_DESCRIPTION", "A simple module to change table fields over time"}
+    };
+
     /* Initialize the global variables */
     s_changes = NULL;
     s_num_changes = 0;
@@ -619,7 +627,7 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
 
     luaL_newlib(L, functions);
 
-    /* Register the ease constants and flags in the module */
+    /* Register the ease constants, flags, and info in the module */
     size_t i = 0;
 
     for (i = 0; i < sizeof(ease_names) / sizeof(ease_names[0]); i++) {
@@ -630,6 +638,11 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
         lua_pushinteger(L, flags[i].value);
         lua_setfield(L, -2, flags[i].name);
+    }
+
+    for (i = 0; i < sizeof(info) / sizeof(info[0]); i++) {
+        lua_pushstring(L, info[i].value);
+        lua_setfield(L, -2, info[i].name);
     }
 
     /* All done */
