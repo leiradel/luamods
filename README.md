@@ -65,6 +65,16 @@ while t.y ~= 100 do
     changeme.update(0.1)
     print(4, t.x, t.y)
 end
+
+local t = {angle = 0}
+
+-- Will keep t.angle spinning forever.
+changeme.by(t, 'angle', 2 * math.pi, 2, changeme.REPEAT)
+
+for i = 1, 100 do
+    changeme.update(0.1) -- the fields will not be updated
+    print(5, t.angle)
+end
 ```
 
 After the duration it's possible to specify the following flags:
@@ -122,6 +132,15 @@ The `status` method will return a string with the status of the change. The name
 * `"dead"`: when the change has finished
 * `"suspended"`: when the changes was created in pause mode as has not been started
 * `"running"`: when the change is active
+
+## Changelog
+
+* 1.1
+  * Added module information: `_COPYRIGHT`, `_LICENSE`, `_VERSION`, `_NAME`, and `_DESCRIPTION`
+  * Fixed field names not being terminated with two nulls
+  * Make it possible to reuse changes even if there are still references to it in Lua land
+* 1.0
+  * First public release
 
 ## License
 
