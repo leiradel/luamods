@@ -135,6 +135,10 @@ The `status` method will return a string with the status of the change. The name
 
 ## Changelog
 
+* 1.2.0
+  * Adopted semantic versioning
+  * Fixed a stupid bug where the free list would end up pointing to invalid addresses when `s_changes` grows
+  * Added `_URL` to the module
 * 1.1
   * Added module information: `_COPYRIGHT`, `_LICENSE`, `_VERSION`, `_NAME`, and `_DESCRIPTION`
   * Fixed field names not being terminated with two nulls

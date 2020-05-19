@@ -651,7 +651,7 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     static struct {char const* name; char const* value;} info[] = {
         {"_COPYRIGHT", "Copyright (c) 2020 Andre Leiradella"},
         {"_LICENSE", "MIT"},
-        {"_VERSION", "1.1"},
+        {"_VERSION", "1.2.0"},
         {"_NAME", "changeme"},
         {"_URL", "https://github.com/leiradel/changeme"},
         {"_DESCRIPTION", "A simple module to change table fields over time"}
