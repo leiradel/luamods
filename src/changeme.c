@@ -650,6 +650,7 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
         {"_LICENSE", "MIT"},
         {"_VERSION", "1.1"},
         {"_NAME", "changeme"},
+        {"_URL", "https://github.com/leiradel/changeme"},
         {"_DESCRIPTION", "A simple module to change table fields over time"}
     };
 
