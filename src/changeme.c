@@ -25,6 +25,7 @@ SOFTWARE.
 #include <lua.h>
 #include <lauxlib.h>
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -51,6 +52,8 @@ SOFTWARE.
 /*-----------------------------------------------------------------------------\
 | Implementation, don't bother                                                 |
 \-----------------------------------------------------------------------------*/
+
+#define INVALID_INDEX SIZE_MAX
 
 /* States and flags */
 typedef enum {
@@ -90,8 +93,8 @@ struct change_t {
         /* The ease function to use with this change */
         ease_func_t ease_func;
 
-        /* The pointer to the next free change in the free list */
-        change_t* next_free;
+        /* The index of the next free change in the free list */
+        size_t next_free;
     }
     u;
 
@@ -163,7 +166,7 @@ static size_t s_num_changes;
 static size_t s_reserved_changes;
 
 /* The head of the list of free changes */
-static change_t* s_free;
+static size_t s_free;
 
 /* An array with all the ease functions from easing.inl */
 static const ease_func_t s_ease_funcs[] = {
@@ -203,9 +206,9 @@ static const ease_func_t s_ease_funcs[] = {
 /* Allocates a new change */
 static change_t* alloc(void) {
     /* If the free list is not empty... */
-    if (s_free != NULL) {
+    if (s_free != INVALID_INDEX) {
         /* Get a change from the head of the free list */
-        change_t* const change = s_free;
+        change_t* const change = s_changes + s_free;
         s_free = change->u.next_free;
         return change;
     }
@@ -244,7 +247,7 @@ static void free_change(lua_State* const L, change_t* const change) {
 
     /* Put the change in the free list */
     change->u.next_free = s_free;
-    s_free = change;
+    s_free = change - s_changes;
 
     /* Make sure it won't be processed anymore */
     change->state = STATE_UNUSED;
@@ -658,7 +661,7 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     s_changes = NULL;
     s_num_changes = 0;
     s_reserved_changes = 0;
-    s_free = NULL;
+    s_free = INVALID_INDEX;
 
     luaL_newlib(L, functions);
 
