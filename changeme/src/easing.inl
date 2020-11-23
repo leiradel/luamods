@@ -10,7 +10,19 @@
 //  http://sam.zoy.org/wtfpl/COPYING for more details.
 //
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
 #include <math.h>
+
+#ifndef M_PI
+#define M_PI (3.14159265358979323846)
+#endif
+
+#ifndef M_PI_2
+#define M_PI_2 (3.14159265358979323846 / 2.0)
+#endif
+
 // HACK this file is directly included in changeme.c
 //#include "easing.h"
 

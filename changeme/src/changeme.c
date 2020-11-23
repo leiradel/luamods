@@ -642,20 +642,58 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
         "SINE_IN_OUT"
     };
 
-    static struct {char const* name; lua_Integer value;} flags[] = {
+    static struct {char const* const name; lua_Integer const value;} const constants[] = {
         {"PAUSED", FLAG_PAUSED},
         {"REPEAT", FLAG_REPEAT},
         {"AFTER", FLAG_AFTER}
     };
 
-    static struct {char const* name; char const* value;} info[] = {
+    static struct {char const* const name; char const* const value;} const info[] = {
         {"_COPYRIGHT", "Copyright (c) 2020 Andre Leiradella"},
         {"_LICENSE", "MIT"},
         {"_VERSION", "1.2.1"},
         {"_NAME", "changeme"},
-        {"_URL", "https://github.com/leiradel/luamods"},
+        {"_URL", "https://github.com/leiradel/luamods/changeme"},
         {"_DESCRIPTION", "A simple module to change table fields over time"}
     };
+
+    int const load_res = luaL_loadstring(L,
+        "return function(module)\n"
+        "    local found, access = pcall(require, 'access')\n"
+        "    return found and access.const(module) or module\n"
+        "end\n"
+    );
+
+    if (load_res != LUA_OK) {
+        return lua_error(L);
+    }
+
+    lua_call(L, 0, 1);
+
+    size_t const functions_count = sizeof(functions) / sizeof(functions[0]) - 1;
+    size_t const ease_count = sizeof(ease_names) / sizeof(ease_names[0]);
+    size_t const constants_count = sizeof(constants) / sizeof(constants[0]);
+    size_t const info_count = sizeof(info) / sizeof(info[0]);
+
+    lua_createtable(L, 0, functions_count + ease_count + constants_count + info_count);
+    luaL_setfuncs(L, functions, 0);
+
+    for (size_t i = 0; i < ease_count; i++) {
+        lua_pushinteger(L, (lua_Integer)i << 16);
+        lua_setfield(L, -2, ease_names[i]);
+    }
+
+    for (size_t i = 0; i < constants_count; i++) {
+        lua_pushinteger(L, constants[i].value);
+        lua_setfield(L, -2, constants[i].name);
+    }
+
+    for (size_t i = 0; i < info_count; i++) {
+        lua_pushstring(L, info[i].value);
+        lua_setfield(L, -2, info[i].name);
+    }
+
+    lua_call(L, 1, 1);
 
     /* Initialize the global variables */
     s_changes = NULL;
@@ -663,26 +701,5 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     s_reserved_changes = 0;
     s_free = INVALID_INDEX;
 
-    luaL_newlib(L, functions);
-
-    /* Register the ease constants, flags, and info in the module */
-    size_t i = 0;
-
-    for (i = 0; i < sizeof(ease_names) / sizeof(ease_names[0]); i++) {
-        lua_pushinteger(L, (lua_Integer)i << 16);
-        lua_setfield(L, -2, ease_names[i]);
-    }
-
-    for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
-        lua_pushinteger(L, flags[i].value);
-        lua_setfield(L, -2, flags[i].name);
-    }
-
-    for (i = 0; i < sizeof(info) / sizeof(info[0]); i++) {
-        lua_pushstring(L, info[i].value);
-        lua_setfield(L, -2, info[i].name);
-    }
-
-    /* All done */
     return 1;
 }
