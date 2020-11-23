@@ -158,6 +158,8 @@ The `status` method will return a string with the status of the change. The name
 
 ## Changelog
 
+* 1.2.2
+  * Fixes to compile with C99
 * 1.2.1
   * Moved module to a subfolder
   * Clarifications and fixed to the README
