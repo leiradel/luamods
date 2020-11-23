@@ -322,7 +322,7 @@ static int status(lua_State* const L) {
         }
 
         case STATE_PAUSED: {
-            /* Returned "suspended", as a paused Lua coroutine would */
+            /* Return "suspended", as a paused Lua coroutine would */
             lua_pushliteral(L, "suspended");
             return 1;
         }
@@ -651,9 +651,9 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     static struct {char const* name; char const* value;} info[] = {
         {"_COPYRIGHT", "Copyright (c) 2020 Andre Leiradella"},
         {"_LICENSE", "MIT"},
-        {"_VERSION", "1.2.0"},
+        {"_VERSION", "1.2.1"},
         {"_NAME", "changeme"},
-        {"_URL", "https://github.com/leiradel/changeme"},
+        {"_URL", "https://github.com/leiradel/luamods"},
         {"_DESCRIPTION", "A simple module to change table fields over time"}
     };
 
