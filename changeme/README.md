@@ -26,14 +26,18 @@ While the limits above feel not very Luaish, they exist to keep the module simpl
 
 ```lua
 changeme.to(
-    table,                    -- Table that will have its fields changed.
+    table,                    -- The table that will have its fields changed.
+
     field_name, target_value, -- Field name as a string and its target value,
                               -- this pair can be repeated to change two or
-                              -- fields in the same change.
+                              -- more fields in the same change.
+
     duration,                 -- Duration of the change, can be in any unit as
                               -- long as it is used consistently.
+
     flags,                    -- The flags for the change (see below), this
                               -- field is optional and defaults to zero.
+
     callback                  -- A function that will be called when the change
                               -- ends, it will be called with the table as its
                               -- only parameter. The function is called even if
