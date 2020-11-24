@@ -1,6 +1,6 @@
 # changeme
 
-**changeme** is a little Lua module to make it easier to change fields in tables over time, using different easing functions.
+**changeme** is a little Lua module to make it easy to change fields in tables over time, using different easing functions.
 
 ## Bulding
 

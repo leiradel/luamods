@@ -1,6 +1,6 @@
 # proxyud
 
-**proxyud** creates a full userdata object, optionally setting a metatable to it. It's purpose is to be used where an empty table would be used to
+**proxyud** creates a full userdata object, optionally setting a metatable to it. It's purpose is to be used as a proxy to another Lua object.
 
 ## Bulding
 
