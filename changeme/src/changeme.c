@@ -600,6 +600,36 @@ static int update(lua_State* const L) {
     return 0;
 }
 
+static int make_const(lua_State* const L) {
+    // Compile the code and leave the chunk at the top of the stack.
+    int const load_res = luaL_loadstring(L,
+        // This code will return its argument as a constant object only if
+        // the access module is available.
+        "return function(module)\n"
+        "    local found, access = pcall(require, 'access')\n"
+        "    return found and access.const(module) or module\n"
+        "end\n"
+    );
+
+    // Oops.
+    if (load_res != LUA_OK) {
+        return load_res;
+    }
+
+    // Run the chunk and leave the function that it returns at the top of the
+    // stack.
+    lua_call(L, 0, 1);
+
+    // Move the function to below the object.
+    lua_insert(L, -2);
+
+    // Run the Lua code to make the module table constant.
+    lua_call(L, 1, 1);
+
+    // All is good.
+    return LUA_OK;
+}
+
 LUALIB_API int luaopen_changeme(lua_State* const L) {
     static const luaL_Reg functions[] = {
         {"to",     to},
@@ -657,19 +687,6 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
         {"_DESCRIPTION", "A simple module to change table fields over time"}
     };
 
-    int const load_res = luaL_loadstring(L,
-        "return function(module)\n"
-        "    local found, access = pcall(require, 'access')\n"
-        "    return found and access.const(module) or module\n"
-        "end\n"
-    );
-
-    if (load_res != LUA_OK) {
-        return lua_error(L);
-    }
-
-    lua_call(L, 0, 1);
-
     size_t const functions_count = sizeof(functions) / sizeof(functions[0]) - 1;
     size_t const ease_count = sizeof(ease_names) / sizeof(ease_names[0]);
     size_t const constants_count = sizeof(constants) / sizeof(constants[0]);
@@ -693,7 +710,9 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
         lua_setfield(L, -2, info[i].name);
     }
 
-    lua_call(L, 1, 1);
+    if (make_const(L) != LUA_OK) {
+        return lua_error(L);
+    }
 
     /* Initialize the global variables */
     s_changes = NULL;
