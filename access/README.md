@@ -61,15 +61,14 @@ s.huge = math.huge
 
 **access** can be used to return a constant module from native C code. Constant modules cannot be changed, of course.
 
-```c
-LUAMOD_API int luaopen_module(lua_State* const L) {
-    static const luaL_Reg functions[] = {
-        {"init", init},
-        {NULL, NULL}
-    };
+The code snippet below will make the object on the top of the stack constant if the **access** module is available, otherwise it will leave the object untouched. It returns `LUA_OK` if successful, or an error code from `luaL_loadstring` if it fails (which it shouldn't), in which case an error message is left at the top of the stack.
 
-    // Lua code that will make a module constant if the access module exists.
+```c
+static int make_const(lua_State* const L) {
+    // Compile the code and leave the chunk at the top of the stack.
     int const load_res = luaL_loadstring(L,
+        // This code will return its argument as a constant object only if
+        // the access module is available.
         "return function(module)\n"
         "    local found, access = pcall(require, 'access')\n"
         "    return found and access.const(module) or module\n"
@@ -78,20 +77,21 @@ LUAMOD_API int luaopen_module(lua_State* const L) {
 
     // Oops.
     if (load_res != LUA_OK) {
-        return lua_error(L);
+        return load_res;
     }
 
-    // The function in the Lua code above is on the top of the stack.
+    // Run the chunk and leave the function that it returns at the top of the
+    // stack.
     lua_call(L, 0, 1);
 
-    // Create and push the table with the module functions.
-    luaL_newlib(L, functions);
+    // Move the function to below the object.
+    lua_insert(L, -2);
 
-    // Run the Lua code to make the module table constant if access exists.
+    // Run the Lua code to make the module table constant.
     lua_call(L, 1, 1);
 
-    // Return the module.
-    return 1;
+    // All is good.
+    return LUA_OK;
 }
 ```
 
