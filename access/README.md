@@ -57,11 +57,29 @@ s.pi = math.huge
 s.huge = math.huge
 ```
 
-### **access** with C code
+## Examples
 
-**access** can be used to return a constant module from native C code. Constant modules cannot be changed, of course.
+### Make all required modules constant
 
-The code snippet below will make the object on the top of the stack constant if the **access** module is available, otherwise it will leave the object untouched. It returns `LUA_OK` if successful, or an error code from `luaL_loadstring` if it fails (which it shouldn't), in which case an error message is left at the top of the stack.
+When run, the code below will install a different `require` function that will make all loaded modules constant if the **access** module is available.
+
+```lua
+local require0 = require
+local found, access = pcall(require, 'access')
+
+if found then
+    require = function(modname)
+        local mod = require0(modname)
+        local const = access.const(mod)
+        package.loaded[modname] = const
+        return const
+    end
+end
+```
+
+### Make objects constant or sealed (C)
+
+The code below will make the object on the top of the stack constant if the **access** module is available, otherwise it will leave the object untouched. It returns `LUA_OK` if successful, or an error code from `luaL_loadstring` if it fails (which it shouldn't), in which case an error message is left at the top of the stack.
 
 ```c
 static int make_const(lua_State* const L) {
