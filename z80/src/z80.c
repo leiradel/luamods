@@ -12,162 +12,9 @@
 #include "z80.h"
 /*---------------------------------------------------------------------------*/
 
-enum {
-    ID_UNKNOWN = 0,
-    ID_A,
-    ID_AF,
-    ID_AF_,
-    ID_B,
-    ID_BC,
-    ID_BC_,
-    ID_C,
-    ID_D,
-    ID_DE,
-    ID_DE_,
-    ID_E,
-    ID_EI_PENDING,
-    ID_EXEC,
-    ID_F,
-    ID_FA,
-    ID_FA_,
-    ID_H,
-    ID_HL,
-    ID_HL_,
-    ID_I,
-    ID_IFF1,
-    ID_IFF2,
-    ID_IM,
-    ID_IX,
-    ID_IY,
-    ID_L,
-    ID_OPDONE,
-    ID_PC,
-    ID_R,
-    ID_RESET,
-    ID_SET_A,
-    ID_SET_AF,
-    ID_SET_AF_,
-    ID_SET_B,
-    ID_SET_BC,
-    ID_SET_BC_,
-    ID_SET_C,
-    ID_SET_D,
-    ID_SET_DE,
-    ID_SET_DE_,
-    ID_SET_E,
-    ID_SET_EI_PENDING,
-    ID_SET_F,
-    ID_SET_FA,
-    ID_SET_FA_,
-    ID_SET_H,
-    ID_SET_HL,
-    ID_SET_HL_,
-    ID_SET_I,
-    ID_SET_IFF1,
-    ID_SET_IFF2,
-    ID_SET_IM,
-    ID_SET_IX,
-    ID_SET_IY,
-    ID_SET_L,
-    ID_SET_PC,
-    ID_SET_R,
-    ID_SET_SP,
-    ID_SET_WZ,
-    ID_SP,
-    ID_TRAP_CB,
-    ID_TRAP_ID,
-    ID_WZ
-};
-
 static bool l_checkboolean(lua_State* const L, int const index) {
     luaL_checktype(L, index, LUA_TBOOLEAN);
     return lua_toboolean(L, index) == 0 ? false : true;
-}
-
-static uint32_t djb2(char const* str) {
-    uint32_t hash = 5381;
-
-    while (*str != 0) {
-        hash = hash * 33 + (uint8_t)*str++;
-    }
-
-    return hash;
-}
-
-static int string_to_id(char const* str) {
-    uint32_t const hash = djb2(str);
-    char const* key = NULL;
-    int value = ID_UNKNOWN;
-
-    switch (hash) {
-        case UINT32_C(0x0002b606): key = "a"; value = ID_A; break;
-        case UINT32_C(0x0059772c): key = "af"; value = ID_AF; break;
-        case UINT32_C(0x0b885d0b): key = "af_"; value = ID_AF_; break;
-        case UINT32_C(0x0002b607): key = "b"; value = ID_B; break;
-        case UINT32_C(0x0059774a): key = "bc"; value = ID_BC; break;
-        case UINT32_C(0x0b8860e9): key = "bc_"; value = ID_BC_; break;
-        case UINT32_C(0x0002b608): key = "c"; value = ID_C; break;
-        case UINT32_C(0x0002b609): key = "d"; value = ID_D; break;
-        case UINT32_C(0x0059778e): key = "de"; value = ID_DE; break;
-        case UINT32_C(0x0b8869ad): key = "de_"; value = ID_DE_; break;
-        case UINT32_C(0x0002b60a): key = "e"; value = ID_E; break;
-        case UINT32_C(0xe26440b7): key = "ei_pending"; value = ID_EI_PENDING; break;
-        case UINT32_C(0x7c967daa): key = "exec"; value = ID_EXEC; break;
-        case UINT32_C(0x0002b60b): key = "f"; value = ID_F; break;
-        case UINT32_C(0x005977cc): key = "fa"; value = ID_FA; break;
-        case UINT32_C(0x0b8871ab): key = "fa_"; value = ID_FA_; break;
-        case UINT32_C(0x0002b60d): key = "h"; value = ID_H; break;
-        case UINT32_C(0x00597819): key = "hl"; value = ID_HL; break;
-        case UINT32_C(0x0b887b98): key = "hl_"; value = ID_HL_; break;
-        case UINT32_C(0x0002b60e): key = "i"; value = ID_I; break;
-        case UINT32_C(0x7c98628b): key = "iff1"; value = ID_IFF1; break;
-        case UINT32_C(0x7c98628c): key = "iff2"; value = ID_IFF2; break;
-        case UINT32_C(0x0059783b): key = "im"; value = ID_IM; break;
-        case UINT32_C(0x00597846): key = "ix"; value = ID_IX; break;
-        case UINT32_C(0x00597847): key = "iy"; value = ID_IY; break;
-        case UINT32_C(0x0002b611): key = "l"; value = ID_L; break;
-        case UINT32_C(0x12ef17aa): key = "opdone"; value = ID_OPDONE; break;
-        case UINT32_C(0x00597918): key = "pc"; value = ID_PC; break;
-        case UINT32_C(0x0002b617): key = "r"; value = ID_R; break;
-        case UINT32_C(0x10474288): key = "reset"; value = ID_RESET; break;
-        case UINT32_C(0x10595e71): key = "set_a"; value = ID_SET_A; break;
-        case UINT32_C(0x1b852cf7): key = "set_af"; value = ID_SET_AF; break;
-        case UINT32_C(0x8c2acc36): key = "set_af_"; value = ID_SET_AF_; break;
-        case UINT32_C(0x10595e72): key = "set_b"; value = ID_SET_B; break;
-        case UINT32_C(0x1b852d15): key = "set_bc"; value = ID_SET_BC; break;
-        case UINT32_C(0x8c2ad014): key = "set_bc_"; value = ID_SET_BC_; break;
-        case UINT32_C(0x10595e73): key = "set_c"; value = ID_SET_C; break;
-        case UINT32_C(0x10595e74): key = "set_d"; value = ID_SET_D; break;
-        case UINT32_C(0x1b852d59): key = "set_de"; value = ID_SET_DE; break;
-        case UINT32_C(0x8c2ad8d8): key = "set_de_"; value = ID_SET_DE_; break;
-        case UINT32_C(0x10595e75): key = "set_e"; value = ID_SET_E; break;
-        case UINT32_C(0x53229182): key = "set_ei_pending"; value = ID_SET_EI_PENDING; break;
-        case UINT32_C(0x10595e76): key = "set_f"; value = ID_SET_F; break;
-        case UINT32_C(0x1b852d97): key = "set_fa"; value = ID_SET_FA; break;
-        case UINT32_C(0x8c2ae0d6): key = "set_fa_"; value = ID_SET_FA_; break;
-        case UINT32_C(0x10595e78): key = "set_h"; value = ID_SET_H; break;
-        case UINT32_C(0x1b852de4): key = "set_hl"; value = ID_SET_HL; break;
-        case UINT32_C(0x8c2aeac3): key = "set_hl_"; value = ID_SET_HL_; break;
-        case UINT32_C(0x10595e79): key = "set_i"; value = ID_SET_I; break;
-        case UINT32_C(0x1188b716): key = "set_iff1"; value = ID_SET_IFF1; break;
-        case UINT32_C(0x1188b717): key = "set_iff2"; value = ID_SET_IFF2; break;
-        case UINT32_C(0x1b852e06): key = "set_im"; value = ID_SET_IM; break;
-        case UINT32_C(0x1b852e11): key = "set_ix"; value = ID_SET_IX; break;
-        case UINT32_C(0x1b852e12): key = "set_iy"; value = ID_SET_IY; break;
-        case UINT32_C(0x10595e7c): key = "set_l"; value = ID_SET_L; break;
-        case UINT32_C(0x1b852ee3): key = "set_pc"; value = ID_SET_PC; break;
-        case UINT32_C(0x10595e82): key = "set_r"; value = ID_SET_R; break;
-        case UINT32_C(0x1b852f53): key = "set_sp"; value = ID_SET_SP; break;
-        case UINT32_C(0x1b852fe1): key = "set_wz"; value = ID_SET_WZ; break;
-        case UINT32_C(0x00597988): key = "sp"; value = ID_SP; break;
-        case UINT32_C(0xf6299120): key = "trap_cb"; value = ID_TRAP_CB; break;
-        case UINT32_C(0xf62991e8): key = "trap_id"; value = ID_TRAP_ID; break;
-        case UINT32_C(0x00597a16): key = "wz"; value = ID_WZ; break;
-
-        default: return ID_UNKNOWN;
-    }
-
-    return strcmp(str, key) == 0 ? value : ID_UNKNOWN;
 }
 
 #define Z80_STATE_MT "Z80State"
@@ -653,85 +500,6 @@ static int l_wz(lua_State* const L) {
     return 1;
 }
 
-static int l_index(lua_State* const L) {
-    static lua_CFunction const functions[] = {
-        NULL,
-        l_a,
-        l_af,
-        l_af_,
-        l_b,
-        l_bc,
-        l_bc_,
-        l_c,
-        l_d,
-        l_de,
-        l_de_,
-        l_e,
-        l_ei_pending,
-        l_exec,
-        l_f,
-        l_fa,
-        l_fa_,
-        l_h,
-        l_hl,
-        l_hl_,
-        l_i,
-        l_iff1,
-        l_iff2,
-        l_im,
-        l_ix,
-        l_iy,
-        l_l,
-        l_opdone,
-        l_pc,
-        l_r,
-        l_reset,
-        l_set_a,
-        l_set_af,
-        l_set_af_,
-        l_set_b,
-        l_set_bc,
-        l_set_bc_,
-        l_set_c,
-        l_set_d,
-        l_set_de,
-        l_set_de_,
-        l_set_e,
-        l_set_ei_pending,
-        l_set_f,
-        l_set_fa,
-        l_set_fa_,
-        l_set_h,
-        l_set_hl,
-        l_set_hl_,
-        l_set_i,
-        l_set_iff1,
-        l_set_iff2,
-        l_set_im,
-        l_set_ix,
-        l_set_iy,
-        l_set_l,
-        l_set_pc,
-        l_set_r,
-        l_set_sp,
-        l_set_wz,
-        l_sp,
-        l_trap_cb,
-        l_trap_id,
-        l_wz
-    };
-
-    char const* const key = luaL_checkstring(L, 2);
-    int const id = string_to_id(key);
-
-    if (id != ID_UNKNOWN) {
-        lua_pushcfunction(L, functions[id]);
-        return 1;
-    }
-
-    return 0;
-}
-
 static int l_gc(lua_State* const L) {
     Z80State* const self = (Z80State*)lua_touserdata(L, 1);
     luaL_unref(L, LUA_REGISTRYINDEX, self->tick_ref);
@@ -759,7 +527,73 @@ static int l_init(lua_State* const L) {
     self->L = NULL;
 
     if (luaL_newmetatable(L, Z80_STATE_MT) != 0) {
-        lua_pushcfunction(L, l_index);
+        static luaL_Reg const methods[] = {
+            {"a", l_a},
+            {"af", l_af},
+            {"af_", l_af_},
+            {"b", l_b},
+            {"bc", l_bc},
+            {"bc_", l_bc_},
+            {"c", l_c},
+            {"d", l_d},
+            {"de", l_de},
+            {"de_", l_de_},
+            {"e", l_e},
+            {"ei_pending", l_ei_pending},
+            {"exec", l_exec},
+            {"f", l_f},
+            {"fa", l_fa},
+            {"fa_", l_fa_},
+            {"h", l_h},
+            {"hl", l_hl},
+            {"hl_", l_hl_},
+            {"i", l_i},
+            {"iff1", l_iff1},
+            {"iff2", l_iff2},
+            {"im", l_im},
+            {"ix", l_ix},
+            {"iy", l_iy},
+            {"l", l_l},
+            {"opdone", l_opdone},
+            {"pc", l_pc},
+            {"r", l_r},
+            {"reset", l_reset},
+            {"set_a", l_set_a},
+            {"set_af", l_set_af},
+            {"set_af_", l_set_af_},
+            {"set_b", l_set_b},
+            {"set_bc", l_set_bc},
+            {"set_bc_", l_set_bc_},
+            {"set_c", l_set_c},
+            {"set_d", l_set_d},
+            {"set_de", l_set_de},
+            {"set_de_", l_set_de_},
+            {"set_e", l_set_e},
+            {"set_ei_pending", l_set_ei_pending},
+            {"set_f", l_set_f},
+            {"set_fa", l_set_fa},
+            {"set_fa_", l_set_fa_},
+            {"set_h", l_set_h},
+            {"set_hl", l_set_hl},
+            {"set_hl_", l_set_hl_},
+            {"set_i", l_set_i},
+            {"set_iff1", l_set_iff1},
+            {"set_iff2", l_set_iff2},
+            {"set_im", l_set_im},
+            {"set_ix", l_set_ix},
+            {"set_iy", l_set_iy},
+            {"set_l", l_set_l},
+            {"set_pc", l_set_pc},
+            {"set_r", l_set_r},
+            {"set_sp", l_set_sp},
+            {"set_wz", l_set_wz},
+            {"sp", l_sp},
+            {"trap_cb", l_trap_cb},
+            {"trap_id", l_trap_id},
+            {"wz", l_wz}
+        };
+
+        luaL_newlib(L, methods);
         lua_setfield(L, -2, "__index");
 
         lua_pushcfunction(L, l_gc);
