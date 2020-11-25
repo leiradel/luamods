@@ -831,36 +831,6 @@ static int l_set_wait(lua_State* const L) {
     return 1;
 }
 
-static int make_const(lua_State* const L) {
-    // Compile the code and leave the chunk at the top of the stack.
-    int const load_res = luaL_loadstring(L,
-        // This code will return its argument as a constant object only if
-        // the access module is available.
-        "return function(module)\n"
-        "    local found, access = pcall(require, 'access')\n"
-        "    return found and access.const(module) or module\n"
-        "end\n"
-    );
-
-    // Oops.
-    if (load_res != LUA_OK) {
-        return load_res;
-    }
-
-    // Run the chunk and leave the function that it returns at the top of the
-    // stack.
-    lua_call(L, 0, 1);
-
-    // Move the function to below the object.
-    lua_insert(L, -2);
-
-    // Run the Lua code to make the module table constant.
-    lua_call(L, 1, 1);
-
-    // All is good.
-    return LUA_OK;
-}
-
 LUAMOD_API int luaopen_z80(lua_State* const L) {
     static const luaL_Reg functions[] = {
         {"init", l_init},
@@ -943,10 +913,6 @@ LUAMOD_API int luaopen_z80(lua_State* const L) {
     for (size_t i = 0; i < info_count; i++) {
         lua_pushstring(L, info[i].value);
         lua_setfield(L, -2, info[i].name);
-    }
-
-    if (make_const(L) != LUA_OK) {
-        return lua_error(L);
     }
 
     return 1;
