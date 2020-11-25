@@ -6,10 +6,11 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------*/
-/* z80.h config and inclusion */
+/* z80.h and z80dasm.h config and inclusion */
 #define CHIPS_IMPL
 #define CHIPS_ASSERT(c)
 #include "z80.h"
+#include "z80dasm.h"
 /*---------------------------------------------------------------------------*/
 
 static bool l_checkboolean(lua_State* const L, int const index) {
@@ -665,6 +666,64 @@ static int l_set_wait(lua_State* const L) {
     return 1;
 }
 
+typedef struct {
+    int input_cb_index;
+    lua_State* L;
+    luaL_Buffer B;
+}
+Z80DasmState;
+
+static uint8_t in_cb(void* const user_data) {
+    Z80DasmState* const ud = (Z80DasmState*)user_data;
+
+    // Push and call the input callback.
+    lua_pushvalue(ud->L, ud->input_cb_index);
+    lua_call(ud->L, 0, 1);
+
+    // Oops.
+    if (!lua_isinteger(ud->L, -1)) {
+        return luaL_error(ud->  L, "'dasm' input callback must return an integer");
+    }
+
+    // Get the returned byte, remove it from the stack, and return.
+    uint8_t const byte = (uint8_t)lua_tointeger(ud->L, -1);
+    lua_pop(ud->L, 1);
+    return byte;
+}
+
+static void out_cb(char const c, void* const user_data) {
+    // Just add the character to the buffer.
+    Z80DasmState* const ud = (Z80DasmState*)user_data;
+    luaL_addchar(&ud->B, c);
+}
+
+static int l_dasm(lua_State* L) {
+    Z80DasmState ud;
+    ud.input_cb_index = 1;
+
+    // Get an optional address in the first argument.
+    uint16_t address = 0;
+
+    if (lua_isinteger(L, 1)) {
+        address = (uint16_t)lua_tointeger(L, 1);
+        ud.input_cb_index = 2;
+    }
+
+    // Make sure we have an input callback.
+    luaL_checktype(L, ud.input_cb_index, LUA_TFUNCTION);
+
+    // Prepare the userdata.
+    ud.L = L;
+    luaL_buffinitsize(L, &ud.B, 32);
+
+    // Disassemble the instruction
+    uint16_t const next_address = z80dasm_op(address, in_cb, out_cb, (void*)&ud);
+
+    luaL_pushresult(&ud.B);
+    lua_pushinteger(L, next_address);
+    return 2;
+}
+
 LUAMOD_API int luaopen_z80(lua_State* const L) {
     static const luaL_Reg functions[] = {
         {"init", l_init},
@@ -675,6 +734,7 @@ LUAMOD_API int luaopen_z80(lua_State* const L) {
         {"SET_DATA", l_set_data},
         {"GET_WAIT", l_get_wait},
         {"SET_WAIT", l_set_wait},
+        {"dasm", l_dasm},
         {NULL, NULL}
     };
 
