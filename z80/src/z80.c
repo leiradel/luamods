@@ -670,8 +670,223 @@ typedef struct {
     int input_cb_index;
     lua_State* L;
     luaL_Buffer B;
+    int count;
+    uint8_t bytes[5];
 }
 Z80DasmState;
+
+static void info(uint8_t const* const opcode, uint8_t* const cycles, uint16_t* const flags) {
+    // 64 is for DJNZ: 13 when it jumps, 8 when it doesn't.
+    // 65 is for JR cc: 12 when it jumps, 7 when it doesn't.
+    // 66 is for RET cc: 11 when it returns, 5 when it doesn't.
+    // 67 is for CALL cc: 17 when it jumps, 10 when it doesn't.
+    // 68 is for block transfers: 21 when it repeats, 16 when it doesn't.
+    static uint8_t const cycles_main[256] = {
+         4, 10,  7,  6,  4,  4,  7,  4,  4, 11,  7,  6,  4,  4,  7,  4,
+        64, 10,  7,  6,  4,  4,  7,  4, 12, 11,  7,  6,  4,  4,  7,  4,
+        65, 10, 16,  6,  4,  4,  7,  4, 65, 11, 16,  6,  4,  4,  7,  4,
+        65, 10, 13,  6, 11, 11, 10,  4, 65, 11, 13,  6,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+         7,  7,  7,  7,  7,  7,  4,  7,  4,  4,  4,  4,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+         4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4,
+        66, 10, 10, 10, 67, 11,  7, 11, 66, 10, 10,  0, 67, 17,  7, 11,
+        66, 10, 10, 11, 67, 11,  7, 11, 66,  4, 10, 11, 67,  0,  7, 11,
+        66, 10, 10, 19, 67, 11,  7, 11, 66,  4, 10,  4, 67,  0,  7, 11,
+        66, 10, 10,  4, 67, 11,  7, 11, 66,  6, 10,  4, 67,  0,  7, 11,
+    };
+
+    static uint8_t const cycles_ed[128] = {
+        12, 12, 15, 20,  8, 14,  8,  9, 12,  8, 15,  8,  8, 14,  8,  9,
+        12,  8, 15,  8,  8, 14,  8,  9, 12,  8, 15,  8,  8, 14,  8,  9,
+        12,  8, 15,  8,  8, 14,  8, 18, 12,  8, 15,  8,  8, 14,  8, 18,
+        12,  8, 15,  8,  8, 14,  8,  8, 12,  8, 15,  8,  8, 14,  8,  8,
+         8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
+         8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
+        16, 16, 16, 16,  8,  8,  8,  8, 16, 16, 16, 16,  8,  8,  8,  8,
+        68, 68, 68, 68,  8,  8,  8,  8, 68, 68, 68, 68,  8,  8,  8,  8,
+    };
+
+    static uint8_t const cycles_ddfd[256] = {
+         0,  0,  0,  0,  0,  0,  0,  0,  0, 15,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0, 15,  0,  0,  0,  0,  0,  0,
+         0, 14, 20, 10,  8,  8, 11,  0,  0, 15, 20, 10,  8,  8, 11,  0,
+         0,  0,  0,  0, 23, 23, 19,  0,  0, 15,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+        19, 19, 19, 19, 19, 19,  0, 19,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  8,  8, 19,  0,  0,  0,  0,  0,  8,  8, 19,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0, 14,  0, 23,  0, 15,  0,  0,  0,  8,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0, 10,  0,  0,  0,  0,  0,  0,
+    };
+
+    // Two bits per flag, in the following order (MSB to LSB): SZ5H3PNV
+    // 0b00: flag is unchanged
+    // 0b01: flag is set
+    // 0b10: flag is reset
+    // 0b11: flag is changed depending on the CPU state
+    static uint16_t const flags_main[256] = {
+        0x0000, 0x0000, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0ecb, 
+        0xffff, 0x0fcb, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0ecb, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0ecb, 
+        0x0000, 0x0fcb, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0ecb, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0xfff3, 
+        0x0000, 0x0fcb, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0dc4, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0ec9, 
+        0x0000, 0x0fcb, 0x0000, 0x0000, 0xfffc, 0xfffc, 0x0000, 0x0fcb, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+        0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+        0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+        0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+        0xfdfa, 0xfdfa, 0xfdfa, 0xfdfa, 0xfdfa, 0xfdfa, 0xfdfa, 0xfdfa, 
+        0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 
+        0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 0xfefa, 
+        0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xffff, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xffff, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xffff, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0xfef8, 0x0000, 0x0000, 0xffff, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xfdfa, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xfefa, 0x0000, 
+        0x0000, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 0xfefa, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xffff, 0x0000, 
+    };
+
+    static uint16_t const flags_ed[128] = {
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0x0000, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0x0000, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0xfef8, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0xfef8, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0xfef8, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0xfef8, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0x0000, 
+        0xfef8, 0x0000, 0xffff, 0x0000, 0xfff7, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0ef8, 0xfff4, 0xffff, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0ef8, 0xfff4, 0xffff, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0ef8, 0xfff4, 0xffff, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 
+        0x0ef8, 0xfff4, 0xffff, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 
+    };
+
+    if (opcode[0] == 0xcb) {
+        // Bit instructions, all shift and rotate instructions affect the flags
+        // in the same way. Same thing for all bit test instructions. Set and
+        // reset instructions don't affect the flags.
+        uint8_t const op = opcode[1];
+        *flags = op < 0x40 ? 0xfefb : op < 0x80 ? 0xfdf8 : 0x0000;
+    }
+    else if (opcode[0] == 0xed) {
+        // Valid extended instructions change the flags according to the
+        // flags_ed table. Invalid ones are NOPs and don't change the flags.
+        uint8_t const op = opcode[1] - 0x40;
+        *flags = (op < 0x80) ? flags_ed[op] : 0x0000;
+    }
+    else if (opcode[0] == 0xdd || opcode[0] == 0xfd) {
+        // IX or IY.
+        if (opcode[1] == 0xcb) {
+            // The index prefix don't change how flags are affected by the bit
+            // instructions.
+            uint8_t const op = opcode[3];
+            *flags = op < 0x40 ? 0xfefb : op < 0x80 ? 0xfdf8 : 0x0000;
+        }
+        else if (opcode[1] == 0xed || opcode[1] == 0xdd || opcode[1] == 0xfd) {
+            // A prefix followed by ED or by another prefix executes as a NOP,
+            // which doesn't affect the flags.
+            *flags = 0x0000;
+        }
+        else if (cycles_ddfd[opcode[1]] == 0) {
+            // A prefix followed by an instruction that doesn't use IX or IY
+            // is also executed as a NOP.
+            *flags = 0x0000;
+        }
+        else {
+            // Use the flags_main table since the prefix will affect the flags
+            // in the same way as the unprefixed instructions.
+            *flags = flags_main[opcode[1]];
+        }
+    }
+    else {
+        // Use the flags_main table directly.
+        *flags = flags_main[opcode[0]];
+    }
+
+    if (opcode[0] == 0xcb) {
+        // Bit instructions.
+        uint8_t const op = opcode[1] & 0xc7;
+
+        if (op == 0x06 || op == 0x86 || op == 0xc6) {
+            // Shift, rotate, set, and reset instructions that use (HL) take
+            // 15 cycles.
+            *cycles = 15;
+        } else if (op == 0x46) {
+            // Bit test instructions that use (HL) take 12 cycles.
+            *cycles = 12;
+        } else {
+            // All other bit instructions take 8 cycles.
+            *cycles = 8;
+        }
+    }
+    else if (opcode[0] == 0xed) {
+        // Valid extended instructions consume cycles according to the
+        // cycles_ed table. Invalid ones are NOPs that take 8 cycles.
+        uint8_t const op = opcode[1] - 0x40;
+        *cycles = (op < 0x80) ? cycles_ed[op] : 8;
+    }
+    else if (opcode[0] == 0xdd || opcode[0] == 0xfd) {
+        // IX or IY.
+        if (opcode[1] == 0xcb) {
+            // Bit instructions.
+            uint8_t const op = opcode[3] & 0xc0;
+
+            if (op == 0x40) {
+                // Bit test instructions take 20 cycles.
+                *cycles = 20;
+            } else {
+                // All other bit instructions take 23 cycles.
+                *cycles = 23;
+            }
+        }
+        else if (opcode[1] == 0xed || opcode[1] == 0xdd || opcode[1] == 0xfd) {
+            // A prefix followed by ED or by another prefix executes as a NOP,
+            // which takes 4 cycles.
+            *cycles = 4;
+        }
+        else if (cycles_ddfd[opcode[1]] == 0) {
+            // A prefix followed by an instruction that doesn't use IX or IY
+            // is also executed as a NOP.
+            *cycles = 4;
+        }
+        else {
+            // Use the cycles_ddfd table for valid uses of the prefix.
+            *cycles = cycles_ddfd[opcode[1]];
+        }
+    }
+    else {
+        // Use the cycles_main table directly.
+        *cycles = cycles_main[opcode[0]];
+    }
+}
 
 static uint8_t in_cb(void* const user_data) {
     Z80DasmState* const ud = (Z80DasmState*)user_data;
@@ -685,8 +900,9 @@ static uint8_t in_cb(void* const user_data) {
         return luaL_error(ud->  L, "'dasm' input callback must return an integer");
     }
 
-    // Get the returned byte, remove it from the stack, and return.
+    // Get the returned byte, save it, remove it from the stack, and return.
     uint8_t const byte = (uint8_t)lua_tointeger(ud->L, -1);
+    ud->bytes[ud->count++] = byte;
     lua_pop(ud->L, 1);
     return byte;
 }
@@ -695,6 +911,67 @@ static void out_cb(char const c, void* const user_data) {
     // Just add the character to the buffer.
     Z80DasmState* const ud = (Z80DasmState*)user_data;
     luaL_addchar(&ud->B, c);
+}
+
+static int flag_is(lua_State* const L, uint8_t const condition) {
+    uint16_t const flags = *(uint16_t*)luaL_checkudata(L, 1, "z80flags");
+
+    size_t length = 0;
+    char const* const flag = luaL_checklstring(L, 2, &length);
+
+    if (length != 1) {
+unknown:
+        return luaL_error(L, "unknown Z80 flag %s", flag);
+    }
+
+    int result = 0;
+
+    switch (*flag) {
+        case 'S': case 's': result = ((flags >> 14) & 3) == condition; break;
+        case 'Z': case 'z': result = ((flags >> 12) & 3) == condition; break;
+        case 'Y': case 'y': case '5': result = ((flags >> 10) & 3) == condition; break;
+        case 'H': case 'h': result = ((flags >>  8) & 3) == condition; break;
+        case 'X': case 'x': case '3': result = ((flags >>  6) & 3) == condition; break;
+        case 'P': case 'p': result = ((flags >>  4) & 3) == condition; break;
+        case 'N': case 'n': result = ((flags >>  2) & 3) == condition; break;
+        case 'C': case 'c': result = ((flags >>  0) & 3) == condition; break;
+        default: goto unknown;
+    }
+
+    lua_pushboolean(L, result);
+    return 1;
+}
+
+static int l_flag_unchanged(lua_State* const L) {
+    return flag_is(L, 0);
+}
+
+static int l_flag_set(lua_State* const L) {
+    return flag_is(L, 1);
+}
+
+static int l_flag_reset(lua_State* const L) {
+    return flag_is(L, 2);
+}
+
+static int l_flag_changed(lua_State* const L) {
+    return flag_is(L, 3);
+}
+
+static int l_flag_tostring(lua_State* const L) {
+    static char const statuses[] = "-10*";
+
+    uint16_t const flags = *(uint16_t*)luaL_checkudata(L, 1, "z80flags");
+    char result[8];
+
+    for (int i = 0; i < 8; i++) {
+        int const shift_amount = 14 - i * 2;
+        uint8_t const flag_status = (flags >> shift_amount) & 3;
+        result[i] = statuses[flag_status];
+    }
+
+    lua_pushlstring(L, result, 8);
+    return 1;
 }
 
 static int l_dasm(lua_State* L) {
@@ -715,13 +992,55 @@ static int l_dasm(lua_State* L) {
     // Prepare the userdata.
     ud.L = L;
     luaL_buffinitsize(L, &ud.B, 32);
+    ud.count = 0;
 
-    // Disassemble the instruction
+    // Disassemble the instruction.
     uint16_t const next_address = z80dasm_op(address, in_cb, out_cb, (void*)&ud);
 
+    // Get cycle and flags information.
+    uint8_t cycles = 0;
+    uint16_t flags = 0;
+    info(ud.bytes, &cycles, &flags);
+
+    // Push the results: disassembled instruction, next address.
     luaL_pushresult(&ud.B);
     lua_pushinteger(L, next_address);
-    return 2;
+
+    // Push affected flags.
+    uint16_t* const flags_ud = (uint16_t*)lua_newuserdata(L, sizeof(uint16_t));
+    *flags_ud = flags;
+
+    // Set the flags userdata's metatable.
+    if (luaL_newmetatable(L, "z80flags")) {
+        static const luaL_Reg methods[] = {
+            {"unchanged", l_flag_unchanged},
+            {"set", l_flag_set},
+            {"reset", l_flag_reset},
+            {"changed", l_flag_changed},
+            {NULL, NULL}
+        };
+
+        luaL_newlib(L, methods);
+        lua_setfield(L, -2, "__index");
+
+        lua_pushcfunction(L, l_flag_tostring);
+        lua_setfield(L, -2, "__tostring");
+    }
+
+    lua_setmetatable(L, -2);
+
+    // Push cycles.
+    switch (cycles) {
+        case 64: lua_pushinteger(L, 13); lua_pushinteger(L, 8); break;
+        case 65: lua_pushinteger(L, 12); lua_pushinteger(L, 7); break;
+        case 66: lua_pushinteger(L, 11); lua_pushinteger(L, 5); break;
+        case 67: lua_pushinteger(L, 17); lua_pushinteger(L, 10); break;
+        case 68: lua_pushinteger(L, 21); lua_pushinteger(L, 16); break;
+
+        default: lua_pushinteger(L, cycles); lua_pushnil(L); break;
+    }
+
+    return 5;
 }
 
 LUAMOD_API int luaopen_z80(lua_State* const L) {
