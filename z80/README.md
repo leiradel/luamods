@@ -69,23 +69,6 @@ z80.dasm(
 )
 ```
 
-Example:
-
-```lua
--- Print the following line three times:
--- BIT 1,(IX+3)    4       ***1**0-        20      nil
-local mem = {0xdd, 0xcb, 0x03, 0x4e}
-
-print(z80.dasm(function()
-    local b = mem[1]
-    table.remove(mem, 1)
-    return b
-end))
-
-print(z80.dasm({0x3c, 0xdd, 0xcb, 0x03, 0x4e}, 2))
-print(z80.dasm('\xed\xb0\xdd\xcb\x03\x4e', 3))
-```
-
 `z80.dasm` returns:
 
 1. A string with the disassembled instruction
@@ -118,6 +101,23 @@ The flags object also has a `__tostring` metamethod that returns a string repres
 * Changed flags appear as `'*'`
 * Unchanged flags appear as `'-'`
 * Set and reset flags appear as `'1'` and `'0'`, respectively
+
+Example:
+
+```lua
+-- Print the following line three times:
+-- BIT 1,(IX+3)    4       ***1**0-        20      nil
+local mem = {0xdd, 0xcb, 0x03, 0x4e}
+
+print(z80.dasm(function()
+    local b = mem[1]
+    table.remove(mem, 1)
+    return b
+end))
+
+print(z80.dasm({0x3c, 0xdd, 0xcb, 0x03, 0x4e}, 2))
+print(z80.dasm('\xed\xb0\xdd\xcb\x03\x4e', 3))
+```
 
 ## Changelog
 
