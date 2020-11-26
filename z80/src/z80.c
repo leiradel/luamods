@@ -1128,5 +1128,53 @@ LUAMOD_API int luaopen_z80(lua_State* const L) {
         lua_setfield(L, -2, info[i].name);
     }
 
+    // Enrich z80.dasm.
+    int const load_res = luaL_loadstring(L,
+        "return function(z80)\n"
+        "    local dasm0 = z80.dasm\n"
+        "\n"
+        "    z80.dasm = function(pc, input_cb, start_index)\n"
+        "        local dasm\n"
+        "\n"
+        "        if type(pc) == 'number' then\n"
+        "            dasm = function(input_cb) return dasm0(pc, input_cb) end\n"
+        "        else\n"
+        "            dasm = function(input_cb) return dasm0(input_cb) end\n"
+        "            start_index = input_cb\n"
+        "            input_cb = pc\n"
+        "        end\n"
+        "\n"
+        "        if type(input_cb) == 'string' then\n"
+        "            local index = start_index or 1\n"
+        "\n"
+        "            return dasm(function()\n"
+        "                local byte = input_cb:byte(index)\n"
+        "                index = index + 1\n"
+        "                return byte\n"
+        "            end)\n"
+        "        elseif type(input_cb) == 'table' then\n"
+        "            local index = start_index or 1\n"
+        "\n"
+        "            return dasm(function()\n"
+        "                local byte = input_cb[index]\n"
+        "                index = index + 1\n"
+        "                return byte\n"
+        "            end)\n"
+        "        else\n"
+        "            return dasm(input_cb)\n"
+        "        end\n"
+        "    end\n"
+        "end\n"
+    );
+
+    if (load_res != LUA_OK) {
+        return load_res;
+    }
+
+    // Call the chunk to get the function, and then call it with the module.
+    lua_call(L, 0, 1);
+    lua_pushvalue(L, -2);
+    lua_call(L, 1, 0);
+
     return 1;
 }
