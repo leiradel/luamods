@@ -2,7 +2,7 @@
 
 **proxyud** creates a full userdata object, optionally setting a metatable to it. It's purpose is to be used as a proxy to another Lua object.
 
-## Bulding
+## Building
 
 It's just one file, either add it to your project or build a loadable Lua module with:
 

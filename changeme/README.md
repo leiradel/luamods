@@ -2,7 +2,7 @@
 
 **changeme** is a little Lua module to make it easy to change fields in tables over time, using different easing functions.
 
-## Bulding
+## Building
 
 It's just one file, either add it to your project or build a loadable Lua module with:
 
@@ -16,7 +16,7 @@ The following macros can be defined to configure the module:
 * `CHANGEME_MAX_FIELDS` (default 4): the maximum number of fields that a change can, hm, change
 * `CHANGEME_INITIAL_ARRAY_SIZE` (default 32): the number of changes that will be reserved when the first change is created
 
-While the limits above feel not very Luaish, they exist to keep the module simple and fast. If you do really need to change 16 fields simultaneously, either change the above limits or create as many changes as necessary to accommodate all of them given the configured limits.
+While the limits above feel not very Lua-ish, they exist to keep the module simple and fast. If you do really need to change 16 fields simultaneously, either change the above limits or create as many changes as necessary to accommodate all of them given the configured limits.
 
 ## Usage
 
@@ -36,7 +36,7 @@ changeme.to(
                               -- long as it is used consistently.
 
     flags,                    -- The flags for the change (see below), this
-                              -- field is optional and defaults to zero.
+                              -- argument is optional and defaults to zero.
 
     callback                  -- A function that will be called when the change
                               -- ends, it will be called with the table as its

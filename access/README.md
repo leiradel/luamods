@@ -5,9 +5,9 @@
 * Constant tables throw errors when a value is assigned to a field, even if the field doesn't exist
 * Sealed tables throw errors when a value is assigned to a field that doesn't exist, but accepts changes to existing fields
 
-Also, in both cases accessing an inexistent field will throw an error.
+Also, in both cases accessing an nonexistent field will throw an error.
 
-## Bulding
+## Building
 
 **access** is a pure Lua module.
 
