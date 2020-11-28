@@ -7,7 +7,7 @@ Bindings for Andre Weissflog's [Z80 CPU emulator](https://github.com/floooh/chip
 It's just one file, either add it to your project or build a loadable Lua module with:
 
 ```
-$ gcc -O2 -shared -fPIC -o z80.so z80.c -llua
+$ gcc -std=c99 -O2 -Werror -Wall -Wpedantic -shared -fPIC -o z80.so z80.c
 ```
 
 ## Usage

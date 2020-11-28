@@ -7,7 +7,7 @@
 It's just one file, either add it to your project or build a loadable Lua module with:
 
 ```
-$ gcc -O2 -shared -fPIC -o changeme.so changeme.c -llua
+$ gcc -std=c99 -O2 -Werror -Wall -Wpedantic -shared -fPIC -o changeme.so changeme.c
 ```
 
 The following macros can be defined to configure the module:
