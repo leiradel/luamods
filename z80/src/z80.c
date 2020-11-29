@@ -1168,7 +1168,7 @@ LUAMOD_API int luaopen_z80(lua_State* const L) {
     );
 
     if (load_res != LUA_OK) {
-        return load_res;
+        return lua_error(L);
     }
 
     // Call the chunk to get the function, and then call it with the module.
