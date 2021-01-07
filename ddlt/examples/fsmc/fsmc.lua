@@ -44,7 +44,7 @@ local function tokenize(path)
             file = path,
             language = 'cpp',
             symbols = {'=>', '(', ')', ';', ','},
-            keywords = {'header', 'fsm', 'class', 'as', 'before', 'after', 'allow', 'forbid'},
+            keywords = {'header', 'cpp', 'fsm', 'class', 'as', 'before', 'after', 'allow', 'forbid'},
             freeform = {{'{', '}'}}
         }
 
@@ -80,7 +80,7 @@ local function tokenize(path)
     -- Get the top-level tokens
     local tokens = getTokens(path, source, 1)
 
-    -- Tokenize the header and fsm freeform blocks
+    -- Tokenize the header, cpp, and fsm freeform blocks
     local i = 1
 
     while i < #tokens do
@@ -172,13 +172,17 @@ local function newParser(path)
             local fsm = {states = {}}
 
             -- Parse directives and statements that will be copied verbatim to
-            -- the generated header
-            if self:token() == 'header' then
+            -- the generated header and cpp generated files
+            while self:token() == 'header' or self:token() == 'cpp' do
+                local token = self:token()
+
+                if fsm[token] then
+                    self:error(self:line(), 'duplicated "%s" block in fsm', token)
+                end
+
                 self:match()
-                fsm.header = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                fsm[token] = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
                 self:match('<freeform>')
-            else
-                fsm.header = nil
             end
 
             self:match('fsm')
@@ -521,6 +525,11 @@ local function emit(fsm, path)
     -- Include the necessary headers
     out:write('// Generated with FSM compiler, https://github.com/leiradel/luamods/ddlt\n\n')
     out:write('#include "', name, '.h"\n\n')
+
+    if fsm.cpp then
+        out:write(line, fsm.cpp.line, ' "', path, '"\n')
+        out:write(fsm.cpp.lexeme, '\n\n')
+    end
 
     -- Emit utility methods
     out:write('#ifdef DEBUG_FSM\n')
