@@ -456,8 +456,6 @@ local function emit(fsm, path)
     out:write('#pragma once\n\n')
     out:write('// Generated with FSM compiler, https://github.com/leiradel/luamods/ddlt\n\n')
 
-    out:write('#include "', fsm.class, '.h"\n\n')
-
     if fsm.header then
         out:write(line, fsm.header.line, ' "', path, '"\n')
         out:write(fsm.header.lexeme, '\n\n')
