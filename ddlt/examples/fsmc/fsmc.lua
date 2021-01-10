@@ -446,7 +446,7 @@ end
 
 local function emit(fsm, path)
     local idn = '    '
-    local line = '#line '
+    local line = '//#line '
 
 
     local dir, name = ddlt.split(path)
