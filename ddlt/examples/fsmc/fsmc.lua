@@ -531,6 +531,7 @@ local function emit(fsm, path)
 
     -- Emit utility methods
     out:write('#ifdef DEBUG_FSM\n')
+    out:write('#include <stdarg.h>\n\n')
     out:write('const char* ', fsm.id, '::stateName(State state) const {\n')
     out:write(idn, 'switch (state) {\n')
 
