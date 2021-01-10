@@ -80,7 +80,7 @@ local function tokenize(path)
     -- Get the top-level tokens
     local tokens = getTokens(path, source, 1)
 
-    -- Tokenize the header, cpp, and fsm freeform blocks
+    -- Tokenize the fsm freeform block
     local i = 1
 
     while i < #tokens do
@@ -209,7 +209,7 @@ local function newParser(path)
 
                 if fsm[event] then
                     self:error(self:line(), 'duplicated event "%s" in fsm', event)
-                    end
+                end
 
                 self:match()
                 fsm[event] = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
@@ -274,10 +274,8 @@ local function newParser(path)
                 end
 
                 self:match()
-                self:match('{')
                 state[event] = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
                 self:match('<freeform>')
-                self:match('}')
             end
 
             while self:token() == '<id>' do
@@ -599,7 +597,7 @@ local function emit(fsm, path)
     for _, state in ipairs(fsm.states) do
         if state.after then
             out:write(idn, idn, 'case State::', state.id, ': {\n')
-            out:write(line, fsm.after.line, ' "', path, '"\n')
+            out:write(line, state.after.line, ' "', path, '"\n')
             out:write(state.after.lexeme, '\n')
             out:write(idn, idn, '}\n')
             out:write(idn, idn, 'break;\n');
