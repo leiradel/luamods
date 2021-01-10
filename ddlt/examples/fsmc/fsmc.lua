@@ -463,6 +463,8 @@ local function emit(fsm, path)
         out:write(fsm.header.lexeme, '\n\n')
     end
 
+    out:write('#include <stdarg.h>\n\n')
+
     out:write('class ', fsm.id, ' {\n')
     out:write('public:\n')
 
@@ -472,7 +474,26 @@ local function emit(fsm, path)
     end
     out:write(idn, '};\n\n')
 
-    out:write(idn, fsm.id, '(', fsm.class, '& ctx): ', fsm.ctx,'(ctx), __state(State::', fsm.begin, ') {}\n\n')
+    out:write(idn, 'typedef void (*VPrintf)(void* ud, const char* fmt, va_list args);\n\n')
+
+    out:write(
+        idn, fsm.id, '(', fsm.class, '& ctx) ',
+        ': ', fsm.ctx,'(ctx)',
+        ', __state(State::', fsm.begin, ')',
+        ', __vprintf(nullptr)',
+        ', __vprintfud(nullptr)',
+        ' {}\n'
+    )
+
+    out:write(
+        idn, fsm.id, '(', fsm.class, '& ctx, VPrintf printer, void* printerud) ',
+        ': ', fsm.ctx,'(ctx)',
+        ', __state(State::', fsm.begin, ')',
+        ', __vprintf(printer)',
+        ', __vprintfud(printerud)',
+        ' {}\n\n'
+    )
+
     out:write(idn, 'State currentState() const { return __state; }\n\n')
 
     out:write('#ifdef DEBUG_FSM\n')
@@ -514,6 +535,8 @@ local function emit(fsm, path)
     out:write(idn, 'void after(State state) const;\n\n')
     out:write(idn, fsm.class, '& ', fsm.ctx, ';\n')
     out:write(idn, 'State __state;\n')
+    out:write(idn, 'VPrintf __vprintf;\n')
+    out:write(idn, 'void* __vprintfud;\n')
     out:write('};\n')
     out:close()
 
@@ -531,7 +554,6 @@ local function emit(fsm, path)
 
     -- Emit utility methods
     out:write('#ifdef DEBUG_FSM\n')
-    out:write('#include <stdarg.h>\n\n')
     out:write('const char* ', fsm.id, '::stateName(State state) const {\n')
     out:write(idn, 'switch (state) {\n')
 
@@ -544,10 +566,12 @@ local function emit(fsm, path)
     out:write(idn, 'return NULL;\n')
     out:write('}\n\n')
     out:write('void ', fsm.id, '::printf(const char* fmt, ...) {\n')
-    out:write(idn, 'va_list args;\n')
-    out:write(idn, 'va_start(args, fmt);\n')
-    out:write(idn, fsm.ctx, '.printf(fmt, args);\n');
-    out:write(idn, 'va_end(args);\n')
+    out:write(idn, 'if (__vprintf != nullptr) {\n')
+    out:write(idn, idn, 'va_list args;\n')
+    out:write(idn, idn, 'va_start(args, fmt);\n')
+    out:write(idn, idn, '__vprintf(__vprintfud, fmt, args);\n');
+    out:write(idn, idn, 'va_end(args);\n')
+    out:write(idn, '}\n')
     out:write('}\n')
     out:write('#endif\n\n')
 
