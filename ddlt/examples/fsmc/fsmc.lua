@@ -494,7 +494,8 @@ local function emit(fsm, path)
         ' {}\n\n'
     )
 
-    out:write(idn, 'State currentState() const { return __state; }\n\n')
+    out:write(idn, 'State currentState() const { return __state; }\n')
+    out:write(idn, 'bool canTransitionTo(const State state) const;\n\n')
 
     out:write('#ifdef DEBUG_FSM\n')
     out:write(idn, 'const char* stateName(State state) const;\n')
@@ -551,6 +552,44 @@ local function emit(fsm, path)
         out:write(line, fsm.cpp.line, ' "', path, '"\n')
         out:write(fsm.cpp.lexeme, '\n\n')
     end
+
+    out:write('bool ', fsm.id, '::canTransitionTo(const State state) const {\n')
+    out:write(idn, 'switch (__state) {\n')
+
+    for _, state in ipairs(fsm.states) do
+        out:write(idn, idn, 'case State::', state.id, ':\n')
+
+        if #state.transitions ~= 0 then
+            out:write(idn, idn, idn, 'switch (state) {\n')
+
+            local valid, sorted = {}, {}
+
+            for _, newState in pairs(state.transitions) do
+                valid[newState.target.id] = true
+            end
+
+            for stateId in pairs(valid) do
+                sorted[#sorted + 1] = stateId
+            end
+
+            table.sort(sorted, function(id1, id2) return id1 < id2 end)
+
+            for _, stateId in ipairs(sorted) do
+                out:write(idn, idn, idn, idn, 'case State::', stateId, ':\n')
+            end
+
+            out:write(idn, idn, idn, idn, idn, 'return true;\n')
+            out:write(idn, idn, idn, idn, 'default: break;\n')
+            out:write(idn, idn, idn, '}\n')
+        end
+
+        out:write(idn, idn, idn, 'break;\n')
+    end
+
+    out:write(idn, idn, 'default: break;\n')
+    out:write(idn, '}\n\n')
+    out:write(idn, 'return false;\n')
+    out:write('}\n\n')
 
     -- Emit utility methods
     out:write('#ifdef DEBUG_FSM\n')
