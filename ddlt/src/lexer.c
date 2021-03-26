@@ -73,6 +73,7 @@ struct Lexer {
     int symbols_ref;
 
     char* symbol_chars;
+    int has_range_symbol;
 
     Next next;
     Block blocks[MAX_BLOCKS];
@@ -416,13 +417,18 @@ static int init_symbol_chars(lua_State* const L, Lexer* const self) {
 
     while (lua_next(L, -2) != 0) {
         if (lua_isstring(L, -2)) {
-            
-            for (char const* symbol = lua_tostring(L, -2); *symbol != 0; symbol++) {
-                unsigned char const k = (unsigned char)*symbol;
+            char const* const symbol = lua_tostring(L, -2);
+
+            for (char const* aux = symbol; *aux != 0; aux++) {
+                unsigned char const k = (unsigned char)*aux;
 
                 if (k >= 32 && k < 256) {
                     used[k - 32] = 1;
                 }
+            }
+
+            if (strcmp(symbol, "..") == 0) {
+                self->has_range_symbol = 1;
             }
         }
 
@@ -547,6 +553,7 @@ int l_newLexer(lua_State* const L) {
     self->source_name_ref = LUA_NOREF;
     self->source_ref = LUA_NOREF;
     self->symbols_ref = LUA_NOREF;
+    self->has_range_symbol = 0;
 
     init_source(L, self);
     init_file(L, self);

@@ -43,7 +43,7 @@ static int pas_get_number(lua_State* const L, Lexer* const self) {
     token = "<decimal>";
     bas_get_decimal(L, self); // same as in BASIC
 
-    if (*self->source == '.') {
+    if (*self->source == '.' && (self->source[1] != '.' || !self->has_range_symbol)) {
         self->source++;
         token = "<float>";
         bas_get_decimal(L, self);
