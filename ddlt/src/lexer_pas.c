@@ -76,7 +76,11 @@ static int pas_get_string(lua_State* const L, Lexer* const self) {
         if (*self->source == '\'') {
             self->source++;
 
-            if (*self->source != '#') {
+            if (*self->source == '\'') {
+                self->source++;
+                continue;
+            }
+            else if (*self->source != '#') {
                 break;
             }
 
