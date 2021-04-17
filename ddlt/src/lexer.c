@@ -73,7 +73,6 @@ struct Lexer {
     int symbols_ref;
 
     char* symbol_chars;
-    int has_range_symbol;
 
     Next next;
     Block blocks[MAX_BLOCKS];
@@ -279,6 +278,29 @@ static int get_suffix(lua_State* const L, Lexer* const self, char const* const s
     return -1;
 }
 
+static char const* get_symbol(lua_State* const L, Lexer* const self, size_t* const length) {
+    char const* const begin = self->source;
+    size_t const length_greedy = strspn(self->source, self->symbol_chars);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, self->symbols_ref);
+
+    for (size_t i = length_greedy; i > 0; i--) {
+        lua_pushlstring(L, begin, i);
+        lua_rawget(L, -2);
+        int const found = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        if (found) {
+            lua_pop(L, 1);
+            *length = i;
+            return begin;
+        }
+    }
+
+    lua_pop(L, 1);
+    *length = 0;
+    return NULL;
+}
+
 static int l_next_lang(lua_State* const L) {
     Lexer* const self = luaL_checkudata(L, 1, "lexer");
     luaL_checktype(L, 2, LUA_TTABLE);
@@ -289,10 +311,12 @@ static int l_next(lua_State* const L) {
     Lexer* const self = luaL_checkudata(L, 1, "lexer");
     luaL_checktype(L, 2, LUA_TTABLE);
 
+    // skip spaces and line separators
     for (;;) {
         self->source += strspn(self->source, SPACE);
 
         if (*self->source == 0) {
+            // found the end of the input
             return push(L, self, "<eof>", "<eof>", strlen("<eof>"));
         }
         else if (*self->source == '\n') {
@@ -307,6 +331,7 @@ static int l_next(lua_State* const L) {
 
     self->la_line = self->line;
 
+    // look for comments, free-form blocks, and directives
     for (unsigned i = 0; i < self->num_blocks; i++) {
         Block const* const block = self->blocks + i;
         char const* const begin = block->begin;
@@ -322,24 +347,14 @@ static int l_next(lua_State* const L) {
         }
     }
 
-    char const* const begin = self->source;
-    size_t const length = strspn(self->source, self->symbol_chars);
-    lua_rawgeti(L, LUA_REGISTRYINDEX, self->symbols_ref);
+    // try to find a symbol
+    size_t symbol_length = 0;
+    char const* const symbol = get_symbol(L, self, &symbol_length);
 
-    for (size_t i = length; i > 0; i--) {
-        lua_pushlstring(L, begin, i);
-        lua_rawget(L, -2);
-        int const found = lua_toboolean(L, -1);
-        lua_pop(L, 1);
-
-        if (found) {
-            lua_pop(L, 1);
-            self->source += i;
-            return pushl(L, self, begin, i, begin, i);
-        }
+    if (symbol != NULL) {
+        self->source += symbol_length;
+        return pushl(L, self, symbol, symbol_length, symbol, symbol_length);
     }
-
-    lua_pop(L, 1);
 
     // call the language specific lexer
     lua_pushcfunction(L, l_next_lang);
@@ -425,10 +440,6 @@ static int init_symbol_chars(lua_State* const L, Lexer* const self) {
                 if (k >= 32 && k < 256) {
                     used[k - 32] = 1;
                 }
-            }
-
-            if (strcmp(symbol, "..") == 0) {
-                self->has_range_symbol = 1;
             }
         }
 
@@ -553,7 +564,6 @@ int l_newLexer(lua_State* const L) {
     self->source_name_ref = LUA_NOREF;
     self->source_ref = LUA_NOREF;
     self->symbols_ref = LUA_NOREF;
-    self->has_range_symbol = 0;
 
     init_source(L, self);
     init_file(L, self);
