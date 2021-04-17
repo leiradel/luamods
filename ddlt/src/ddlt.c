@@ -19,7 +19,7 @@ LUAMOD_API int luaopen_ddlt(lua_State* L) {
         {NULL, NULL}
     };
 
-    int const load_res = luaL_loadbufferx(L, boot_lua, (size_t)boot_lua_len, "boot.lua", "t");
+    int const load_res = luaL_loadbufferx(L, boot_lua, sizeof(boot_lua), "boot.lua", "t");
 
     if (load_res != LUA_OK) {
         return lua_error(L);

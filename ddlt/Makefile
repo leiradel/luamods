@@ -30,7 +30,7 @@ src/path.o: src/path.c src/path.h src/realpath.c
 src/templ.o: src/templ.c src/templ.h
 
 src/boot_lua.h: src/boot.lua
-	xxd -i $< | sed "s@unsigned@const@" | sed "s@src_@@" > $@
+	echo "static char const `basename "$<" | sed 's/\./_/'`[] = {\n`cat "$<" | xxd -i`\n};" > "$@"
 
 clean:
 	rm -f $(TARGET) src/ddlt.o src/lexer.o src/path.o src/templ.o src/boot_lua.h
