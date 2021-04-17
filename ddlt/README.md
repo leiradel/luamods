@@ -348,6 +348,10 @@ print(table.concat(source, ''))
 
 ## Changelog
 
+* 4.0.1
+  * Fixed the Pascal number lexer when a number is followed by the range symbol `..`
+  * Fixed two apostrophes in Pascal strings denoting a single apostrophe
+  * Fixed keywords in BASIC and Pascal not being case-insensitive
 * 4.0.0
   * Major rewrite:
     * New code style
