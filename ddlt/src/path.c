@@ -141,7 +141,7 @@ int l_scandir(lua_State* const L) {
 static void pushtime(lua_State* const L, time_t const* const time) {
     struct tm const* const tm = gmtime(time);
 
-    char buf[32];
+    char buf[40];
 
     int const written = sprintf(
         buf,
