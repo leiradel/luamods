@@ -25,6 +25,7 @@ return function(ddlt)
         end
 
         if newopts.keywords then
+            local language = newopts.language
             local keywords = {}
 
             for i = 1, #newopts.keywords do
@@ -39,8 +40,12 @@ return function(ddlt)
                         return nil, err
                     end
 
-                    if la.token == '<id>' and keywords[la.lexeme] then
-                        la.token = la.lexeme
+                    if la.token == '<id>' then
+                        local lexeme = language == 'cpp' and la.lexeme or la.lexeme:lower()
+
+                        if keywords[lexeme] then
+                            la.token = lexeme
+                        end
                     end
 
                     return la
