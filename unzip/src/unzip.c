@@ -112,12 +112,10 @@ static int l_read(lua_State* const L) {
         lua_getfield(L, -1, "result");
         lua_insert(L, -2);
         lua_call(L, 1, 1);
-    }
-    else {
-        lua_pushvalue(L, 1);
+        return 1;
     }
 
-    return 1;
+    return 0;
 }
 
 static int l_gc(lua_State* const L) {
