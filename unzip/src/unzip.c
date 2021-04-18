@@ -58,22 +58,25 @@ static int l_read(lua_State* const L) {
     int const string_writer = lua_isnoneornil(L, 3);
 
     if (string_writer) {
+        lua_settop(L, 2);
         l_push_string_writer(L);
+    }
+    else {
+        lua_settop(L, 3);
     }
 
     if (unzLocateFile(self->file, path, 1) != UNZ_OK) {
         lua_pushnil(L);
-	    lua_pushfstring(L, "could not find file \"%s\" in archive", path);
+        lua_pushfstring(L, "could not find file \"%s\" in archive", path);
         return 2;
     }
 
     if (unzOpenCurrentFile(self->file) != UNZ_OK) {
         lua_pushnil(L);
-    	lua_pushfstring(L, "error opening file \"%s\"", path);
+        lua_pushfstring(L, "error opening file \"%s\"", path);
         return 2;
     }
 
-    lua_settop(L, 3);
     lua_getfield(L, 3, "write");
 
     char buffer[256];
