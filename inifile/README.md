@@ -2,6 +2,8 @@
 
 **inifile** reads entries from a [INI](https://en.wikipedia.org/wiki/INI_file) file.
 
+Blank lines are ignores, and comments starting with a semi-colon are supported. Both keys and values are trimmed to remove surrounding spaces.
+
 ## Building
 
 **inifile** is a pure Lua module.
