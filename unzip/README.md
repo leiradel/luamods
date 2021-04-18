@@ -61,6 +61,9 @@ print(string.format('%08x', unzip.crc32('test')))
 
 ## Changelog
 
+* 2.0.0
+  * Fixed passing a value after a nil for the sink creating the string sink in the wrong stack index
+  * Breaking: `:read()` now returns either the string if the string sink is used, or nothing at all
 * 1.0.0
   * First public release
 
