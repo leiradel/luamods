@@ -2,7 +2,7 @@
 
 **inifile** reads entries from a [INI](https://en.wikipedia.org/wiki/INI_file) file.
 
-Blank lines are ignores, and comments starting with a semi-colon are supported. Both keys and values are trimmed to remove surrounding spaces.
+Blank lines are ignores, and comments starting with a semi-colon are supported. Both keys and values are trimmed to remove surrounding spaces. Values are always returned as strings, no conversion is done.
 
 ## Building
 
@@ -30,7 +30,7 @@ end
 
 ### `inifile.load`
 
-Loads an INI file and returns all entries in a table. The table has section names as the keys with their values being the <key, value> pairs for the section.
+Loads an INI file and returns all entries in a table. The table has section names as the keys with their values being the `<key, value>` pairs for the section.
 
 Example:
 
