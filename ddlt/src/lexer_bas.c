@@ -99,10 +99,10 @@ static int bas_get_number(lua_State* const L, Lexer* const self) {
         return push(L, self, token, lexeme, self->source - lexeme);
     }
 
-    if (*self->source != '.') {
+    if (!is_decimal_dot(L, self)) {
         bas_get_decimal(L, self);
 
-        if (*self->source != '.' && *self->source != 'e' && *self->source != 'E') {
+        if (!is_decimal_dot(L, self) && *self->source != 'e' && *self->source != 'E') {
             char const* token = "<decimal>";
 
             if (bas_get_integer_suffix(L, self) != 0 && bas_get_float_suffix(L, self) == 0) {
@@ -113,7 +113,7 @@ static int bas_get_number(lua_State* const L, Lexer* const self) {
         }
     }
 
-    if (*self->source == '.') {
+    if (is_decimal_dot(L, self)) {
         self->source++;
         self->source += strspn(self->source, DIGIT);
     }

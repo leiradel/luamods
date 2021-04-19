@@ -278,12 +278,12 @@ static int get_suffix(lua_State* const L, Lexer* const self, char const* const s
     return -1;
 }
 
-static char const* get_symbol(lua_State* const L, Lexer* const self, size_t* const length) {
+static size_t get_symbol_length(lua_State* const L, Lexer* const self) {
     char const* const begin = self->source;
-    size_t const length_greedy = strspn(self->source, self->symbol_chars);
+    size_t const length = strspn(self->source, self->symbol_chars);
     lua_rawgeti(L, LUA_REGISTRYINDEX, self->symbols_ref);
 
-    for (size_t i = length_greedy; i > 0; i--) {
+    for (size_t i = length; i > 0; i--) {
         lua_pushlstring(L, begin, i);
         lua_rawget(L, -2);
         int const found = lua_toboolean(L, -1);
@@ -291,14 +291,16 @@ static char const* get_symbol(lua_State* const L, Lexer* const self, size_t* con
 
         if (found) {
             lua_pop(L, 1);
-            *length = i;
-            return begin;
+            return i;
         }
     }
 
     lua_pop(L, 1);
-    *length = 0;
-    return NULL;
+    return 0;
+}
+
+static int is_decimal_dot(lua_State* const L, Lexer* const self) {
+    return *self->source == '.' && get_symbol_length(L, self) <= 1;
 }
 
 static int l_next_lang(lua_State* const L) {
@@ -348,10 +350,10 @@ static int l_next(lua_State* const L) {
     }
 
     // try to find a symbol
-    size_t symbol_length = 0;
-    char const* const symbol = get_symbol(L, self, &symbol_length);
+    size_t const symbol_length = get_symbol_length(L, self);
 
-    if (symbol != NULL) {
+    if (symbol_length != 0) {
+        char const* const symbol = self->source;
         self->source += symbol_length;
         return pushl(L, self, symbol, symbol_length, symbol, symbol_length);
     }

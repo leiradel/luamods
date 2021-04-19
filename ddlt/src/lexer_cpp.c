@@ -102,8 +102,11 @@ static int cpp_get_number(lua_State* const L, Lexer* const self) {
         }
         else {
             size_t const length = strspn(self->source, DIGIT);
+            self->source += length;
+            int const has_decimal_dot = is_decimal_dot(L, self);
+            self->source -= length;
 
-            if (self->source[length] == '.' || self->source[length] == 'e' || self->source[length] == 'E') {
+            if (has_decimal_dot || self->source[length] == 'e' || self->source[length] == 'E') {
                 goto is_float;
             }
 
@@ -120,16 +123,16 @@ static int cpp_get_number(lua_State* const L, Lexer* const self) {
     }
 
 is_float:
-    if (*self->source != '.') {
+    if (!is_decimal_dot(L, self)) {
         cpp_get_decimal(L, self);
 
-        if (*self->source != '.' && *self->source != 'e' && *self->source != 'E') {
+        if (!is_decimal_dot(L, self) && *self->source != 'e' && *self->source != 'E') {
             cpp_get_integer_suffix(L, self);
             return push(L, self, "<decimal>", lexeme, self->source - lexeme);
         }
     }
 
-    if (*self->source == '.') {
+    if (is_decimal_dot(L, self)) {
         self->source++;
 
         if (strspn(self->source, DIGIT) != 0) {
