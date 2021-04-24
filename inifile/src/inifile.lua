@@ -17,7 +17,7 @@ local function iterate(file)
                 line = line:sub(1, comment - 1)
             end
 
-            local key, value = line:match('^([^%s]+)%s-=%s-(.-)\r?$')
+            local key, value = line:match('^([^%s]+)%s*=%s*(.-)\r?$')
 
             if key and value then
                 if not section then

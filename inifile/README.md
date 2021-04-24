@@ -49,6 +49,8 @@ end
 
 ## Changelog
 
+* 1.0.1
+  * Correctly trim out spaces from values
 * 1.0.0
   * First public release
 
