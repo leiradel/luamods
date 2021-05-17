@@ -86,27 +86,76 @@ local sealmt = {
     __call = constmt.__call
 }
 
+-- The metatable for record tables.
+local recordmt = {
+    __index = constmt.__index,
+
+    __newindex = function(ud, key, value)
+        -- Get the table for the userdata.
+        local table = proxyud_get(ud)
+
+        -- Only assign if the field exists and the values's types are the same.
+        local oldvalue = table[key]
+
+        if oldvalue ~= nil then
+            if type(oldvalue) == type(value) then
+                table[key] = value
+                return
+            end
+
+            -- Wrong type.
+            error(string.format('cannot assign to field \'%s\' of different type in record table', key))
+        end
+
+        -- Unknown key.
+        error(string.format('cannot assign to unknown field \'%s\' in record table', key))
+    end,
+
+    __add = constmt.__add,
+    __sub = constmt.__sub,
+    __mul = constmt.__mul,
+    __div = constmt.__div,
+    __mod = constmt.__mod,
+    __pow = constmt.__pow,
+    __unm = constmt.__unm,
+    __idiv = constmt.__idiv,
+    __band = constmt.__band,
+    __bor = constmt.__bor,
+    __bxor = constmt.__bxor,
+    __bnot = constmt.__bnot,
+    __shl = constmt.__shl,
+    __shr = constmt.__shr,
+    __concat = constmt.__concat,
+    __len = constmt.__len,
+    __eq = constmt.__eq,
+    __lt = constmt.__lt,
+    __le = constmt.__le,
+    __call = constmt.__call
+}
+
 local function const(table)
-    -- Create an userdata with the table and the constmt metatable.
-    local ud = proxyud_new(table, constmt)
-    -- Return the userdata proxy.
-    return ud
+    -- Create and return an userdata with the table and the constmt metatable.
+    return proxyud_new(table, constmt)
 end
 
 local function seal(table)
-    local ud = proxyud_new(table, sealmt)
-    return ud
+    return proxyud_new(table, sealmt)
+end
+
+local function record(table)
+    return proxyud_new(table, recordmt)
 end
 
 -- The module.
 return const {
-    _COPYRIGHT = 'Copyright (c) 2020 Andre Leiradella',
+    _COPYRIGHT = 'Copyright (c) 2021 Andre Leiradella',
     _LICENSE = 'MIT',
-    _VERSION = '1.0.0',
+    _VERSION = '1.1.0',
     _NAME = 'proxyud',
     _URL = 'https://github.com/leiradel/luamods/access',
     _DESCRIPTION = 'Creates constant and sealed objects',
 
     const = const,
-    seal = seal
+    seal = seal,
+    record = record
 }

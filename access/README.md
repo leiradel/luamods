@@ -42,7 +42,7 @@ Example:
 ```lua
 local access = require 'access'
 
--- Create a constant table.
+-- Create a sealed table.
 local s = access.seal {
     pi = math.pi
 }
@@ -53,7 +53,29 @@ print(s.huge)
 -- Ok, s.pi exists and will be equal to math.huge.
 s.pi = math.huge
 
--- Throws an error, the table is sealed.
+-- Throws an error, the table is sealed and the field doesn't exist.
+s.huge = math.huge
+```
+
+### `access.record`
+
+Example:
+
+```lua
+local access = require 'access'
+
+-- Create a record.
+local s = access.record {
+    pi = math.pi
+}
+
+-- Throws an error, c.huge doesn't exist.
+print(s.huge)
+
+-- Throws an error, s.pi exists but is a number.
+s.pi = 'pi'
+
+-- Throws an error, the table is a record and the field doesn't exist.
 s.huge = math.huge
 ```
 
