@@ -141,6 +141,7 @@ static int make_const(lua_State* const L) {
 
 ## Limitations
 
+* `__close` metamethod not proxied
 * `ipairs` doesn't work with proxied tables because it will try to access one element past the end of the array, which throws an error for all constant, sealed, and record tables created with this module
 
 ## Changelog
