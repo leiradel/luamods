@@ -139,8 +139,19 @@ static int make_const(lua_State* const L) {
 
 **access** depends on the **proxyud** module to create full userdata objects used as proxies to the real values.
 
+## Limitations
+
+* `ipairs` doesn't work with proxied tables because it will try to access one element past the end of the array, which throws an error for all constant, sealed, and record tables created with this module
+
 ## Changelog
 
+* 1.2.0
+  * Added support to more metamethods
+  * Added unit tests
+  * Cached some additional globals
+  * Some refactoring to make sure all metamethods are copied from the `const` metatable to `seal` and `record` ones
+* 1.1.0
+  * Added `record`, which acts like `seal` but errors if the new value being assigned to a field doesn't have the same type as the previous value
 * 1.0.0
   * First public release
 
