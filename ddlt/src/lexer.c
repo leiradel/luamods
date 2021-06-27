@@ -64,9 +64,11 @@ Block;
 struct Lexer {
     const char* source_name;
     unsigned line;
+    const char* source_start;
     const char* source;
     const char* line_start;
     unsigned la_line;
+    ptrdiff_t la_offset;
 
     int source_ref;
     int source_name_ref;
@@ -119,6 +121,9 @@ static int pushl(lua_State* const L,
 
     lua_pushinteger(L, self->la_line);
     lua_setfield(L, 2, "line");
+
+    lua_pushinteger(L, self->la_offset);
+    lua_setfield(L, 2, "offset");
 
     lua_pushvalue(L, 2);
     return 1;
@@ -332,6 +337,7 @@ static int l_next(lua_State* const L) {
     }
 
     self->la_line = self->line;
+    self->la_offset = self->source - self->source_start;
 
     // look for comments, free-form blocks, and directives
     for (unsigned i = 0; i < self->num_blocks; i++) {
@@ -396,6 +402,7 @@ static int init_source(lua_State* const L, Lexer* const self) {
     }
 
     self->source = lua_tostring(L, -1);
+    self->source_start = self->source;
     self->source_ref = luaL_ref(L, LUA_REGISTRYINDEX);
     self->line_start = self->source;
 
