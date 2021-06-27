@@ -111,7 +111,7 @@ local expected = {
     {line = 62, index = 307, token = [[<string>]], lexeme = "\"a\"\"\""},
     {line = 63, index = 313, token = [[<string>]], lexeme = "\"\"\"a\""},
     {line = 64, index = 319, token = [[<string>]], lexeme = "\"a\"\"b\""},
-    {line = 64, index = nil, token = [[<eof>]], lexeme = nil}
+    {line = 64, index = nil, token = [[<eof>]], lexeme = "<eof>"}
 }
 
 assert(#tokens == #expected, string.format('Wrong number of tokens produced, got %d, expected %d', #tokens, #expected))

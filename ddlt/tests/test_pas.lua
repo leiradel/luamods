@@ -101,7 +101,7 @@ lines }"},
     {line = 54, index = 416, token = [[<string>]], lexeme = "'a'#48#49"},
     {line = 55, index = 426, token = [[<string>]], lexeme = "#48#49'a'"},
     {line = 56, index = 436, token = [[<string>]], lexeme = "'a'#48#49'b'"},
-    {line = 56, index = nil, token = [[<eof>]], lexeme = nil}
+    {line = 56, index = nil, token = [[<eof>]], lexeme = "<eof>"}
 }
 
 assert(#tokens == #expected, string.format('Wrong number of tokens produced, got %d, expected %d', #tokens, #expected))

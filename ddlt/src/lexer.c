@@ -68,7 +68,6 @@ struct Lexer {
     const char* source;
     const char* line_start;
     unsigned la_line;
-    ptrdiff_t la_offset;
 
     int source_ref;
     int source_name_ref;
@@ -122,8 +121,8 @@ static int pushl(lua_State* const L,
     lua_pushinteger(L, self->la_line);
     lua_setfield(L, 2, "line");
 
-    lua_pushinteger(L, self->la_offset);
-    lua_setfield(L, 2, "offset");
+    lua_pushinteger(L, lexeme - self->source_start + 1);
+    lua_setfield(L, 2, "index");
 
     lua_pushvalue(L, 2);
     return 1;
@@ -324,7 +323,20 @@ static int l_next(lua_State* const L) {
 
         if (*self->source == 0) {
             // found the end of the input
-            return push(L, self, "<eof>", "<eof>", strlen("<eof>"));
+            lua_pushliteral(L, "<eof>");
+            lua_setfield(L, 2, "token");
+
+            lua_pushliteral(L, "<eof>");
+            lua_setfield(L, 2, "lexeme");
+
+            lua_pushinteger(L, self->la_line);
+            lua_setfield(L, 2, "line");
+
+            lua_pushnil(L);
+            lua_setfield(L, 2, "index");
+
+            lua_pushvalue(L, 2);
+            return 1;
         }
         else if (*self->source == '\n') {
             self->source++;
@@ -337,7 +349,6 @@ static int l_next(lua_State* const L) {
     }
 
     self->la_line = self->line;
-    self->la_offset = self->source - self->source_start;
 
     // look for comments, free-form blocks, and directives
     for (unsigned i = 0; i < self->num_blocks; i++) {

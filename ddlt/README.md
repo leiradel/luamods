@@ -273,7 +273,7 @@ The resulting object only has one method, `next`. It takes a table where the inf
   * A keyword, as identified by the `keywords` array when provided
 * `lexeme`: a string with the value of the token as found in the source code
 * `line`: the line number where the token is in the source code
-* `offset`: the 0-based offset of the current lexeme from the start of the source code
+* `index`: the 1-based index of the current lexeme from the start of the source code
 
 `next` will also return the same table passed to it as an argument if successful. In case of errors, it will return `nil`, plus a string describing the error. The error message will always be in the format `<file>:<line>: message`, which is the standard way to describe errors in compilers.
 
@@ -350,7 +350,7 @@ print(table.concat(source, ''))
 ## Changelog
 
 * 5.1.0
-  * Added the `offset` field to the table returned by `next`
+  * Added the `index` field to the table returned by `next`
 * 5.0.0
   * Now all languages correctly detect a symbol starting with a dot in the middle of a number literal
 * 4.0.1

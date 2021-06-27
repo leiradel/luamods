@@ -129,7 +129,7 @@ lines */"},
     {line = 80, index = 906, token = [[<string>]], lexeme = "\"press\"_zx81"},
     {line = 81, index = 919, token = [[<string>]], lexeme = "\"press\"_"},
     {line = 82, index = 928, token = [[<rawstring>]], lexeme = "R\"raw(press)raw\"_ebcdic"},
-    {line = 82, index = nil, token = [[<eof>]], lexeme = nil}
+    {line = 82, index = nil, token = [[<eof>]], lexeme = "<eof>"}
 }
 
 assert(#tokens == #expected, string.format('Wrong number of tokens produced, got %d, expected %d', #tokens, #expected))
