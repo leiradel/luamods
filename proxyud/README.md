@@ -18,7 +18,7 @@ $ gcc -std=c99 -O2 -Werror -Wall -Wpedantic -shared -fPIC -o proxyud.so proxyud.
 
 ```lua
 proxyud.new(
-    value,    -- Value that will be set as the userdata's user value.
+    value,    -- Value that will be set as the userdata's user value, optional.
 
     metatable -- Metatable for the userdata object (optional, the object
               -- will not have a metatable if not informed).
@@ -34,7 +34,7 @@ local proxyud = require 'proxyud'
 local ud1 = proxyud.new()
 
 -- Initialized with a metatable.
-local ud2 = proxyud.new({__call = function() print 'called' end})
+local ud2 = proxyud.new(nil, {__call = function() print 'called' end})
 
 -- Prints 'called'
 ud2()
