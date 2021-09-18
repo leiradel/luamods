@@ -2,6 +2,8 @@ ifeq ($(shell uname -s),)
     TARGET=ddlt.dll
 else ifneq ($(findstring MINGW,$(shell uname -a)),)
     TARGET=ddlt.dll
+else ifneq ($(findstring MSYS,$(shell uname -a)),)
+    TARGET=ddlt.dll
 else ifneq ($(findstring win,$(shell uname -a)),)
     TARGET=ddlt.dll
 else ifneq ($(findstring Darwin,$(shell uname -a)),)
