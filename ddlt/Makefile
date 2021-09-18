@@ -1,6 +1,3 @@
-INCLUDES=-Isrc
-CFLAGS=-O2 -Werror -Wall -Wpedantic -fPIC
-
 ifeq ($(shell uname -s),)
     TARGET=ddlt.dll
 else ifneq ($(findstring MINGW,$(shell uname -a)),)
@@ -14,12 +11,12 @@ else
 endif
 
 %.o: %.c
-	gcc $(INCLUDES) $(CFLAGS) -c $< -o $@
+	gcc -Isrc -O2 -Werror -Wall -Wpedantic -fPIC $(CFLAGS) -c $< -o $@
 
 all: $(TARGET)
 
 $(TARGET): src/ddlt.o src/lexer.o src/path.o src/templ.o
-	gcc -shared -fPIC -o $@ $+ -lm
+	gcc -shared -fPIC -o $@ $+ -lm $(LDFLAGS)
 
 src/ddlt.o: src/ddlt.c src/lexer.h src/path.h src/templ.h src/boot_lua.h
 
