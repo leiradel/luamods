@@ -13,12 +13,12 @@ else
 endif
 
 %.o: %.c
-	gcc -Isrc -O2 -Werror -Wall -Wpedantic -fPIC $(CFLAGS) -c $< -o $@
+	gcc -Isrc -O2 -Werror -Wall -Wpedantic -fPIC $(CFLAGS) `pkg-config lua --cflags` -c $< -o $@
 
 all: $(TARGET)
 
 $(TARGET): src/ddlt.o src/lexer.o src/path.o src/templ.o
-	gcc -shared -fPIC -o $@ $+ -lm $(LDFLAGS)
+	gcc -shared -fPIC -o $@ $+ -lm $(LDFLAGS) `pkg-config lua --libs`
 
 src/ddlt.o: src/ddlt.c src/lexer.h src/path.h src/templ.h src/boot_lua.h
 
