@@ -27,7 +27,7 @@ unzip.init(
 
 The `read` method reads entries from an open ZIP archive.
 
-```
+```lua
 z:read(
     sink -- Any value that has the write function following Lua's io library
          -- semantics. If not informed, a sink that writes to a string will be
