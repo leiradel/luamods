@@ -29,7 +29,7 @@ src/path.o: src/path.c src/path.h src/realpath.c
 src/templ.o: src/templ.c src/templ.h
 
 src/boot_lua.h: src/boot.lua
-	echo -e "static char const `basename "$<" | sed 's/\./_/'`[] = {\n`cat "$<" | xxd -i`\n};" > "$@"
+	echo "static char const `basename "$<" | sed 's/\./_/'`[] = {`cat "$<" | xxd -i`};" > "$@"
 
 clean:
 	rm -f $(TARGET) src/ddlt.o src/lexer.o src/path.o src/templ.o src/boot_lua.h
