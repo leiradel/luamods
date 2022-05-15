@@ -380,14 +380,8 @@ static int l_next(lua_State* const L) {
     lua_pushvalue(L, 1);
     lua_pushvalue(L, 2);
 
-    if (lua_pcall(L, 2, 1, 0) == LUA_OK) {
-        return 1;
-    }
-
-    // error
-    lua_pushnil(L);
-    lua_insert(L, -2);
-    return 2;
+    lua_call(L, 2, 1);
+    return 1;
 }
 
 static int l_gc(lua_State* const L) {
