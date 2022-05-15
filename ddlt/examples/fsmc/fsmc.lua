@@ -34,40 +34,43 @@ local function fatal(path, line, format, ...)
 end
 
 -------------------------------------------------------------------------------
--- Tokenizes the source code
+-- Tokenizes source code
+-------------------------------------------------------------------------------
+local function getTokens(path, source, startLine)
+    local lexer = ddlt.newLexer{
+        source = source,
+        startline = startLine,
+        file = path,
+        language = 'cpp',
+        symbols = {'=>', '(', ')', ';', ','},
+        keywords = {'header', 'implementation', 'fsm', 'before', 'after'},
+        freeform = {{'{', '}'}}
+    }
+
+    local tokens = {}
+    local la
+
+    repeat
+        repeat
+            local err
+            la, err = lexer:next({})
+
+            if not la then
+                io.stderr:write(err)
+                os.exit(1)
+            end
+        until la.token ~= '<linecomment>' and la.token ~= '<blockcomment>'
+
+        tokens[#tokens + 1] = la
+    until la.token == '<eof>'
+
+    return tokens
+end
+
+-------------------------------------------------------------------------------
+-- Tokenizes a file
 -------------------------------------------------------------------------------
 local function tokenize(path)
-    local function getTokens(path, source, startLine)
-        local lexer = ddlt.newLexer{
-            source = source,
-            startline = startLine,
-            file = path,
-            language = 'cpp',
-            symbols = {'=>', '(', ')', ';', ','},
-            keywords = {'header', 'cpp', 'fsm', 'class', 'as', 'before', 'after', 'allow', 'forbid'},
-            freeform = {{'{', '}'}}
-        }
-
-        local tokens = {}
-        local la
-
-        repeat
-            repeat
-                local err
-                la, err = lexer:next({})
-
-                if not la then
-                    io.stderr:write(err)
-                    os.exit(1)
-                end
-            until la.token ~= '<linecomment>' and la.token ~= '<blockcomment>'
-
-            tokens[#tokens + 1] = la
-        until la.token == '<eof>'
-
-        return tokens
-    end
-
     local inp, err = io.open(path, 'rb')
 
     if not inp then
@@ -78,57 +81,7 @@ local function tokenize(path)
     inp:close()
 
     -- Get the top-level tokens
-    local tokens = getTokens(path, source, 1)
-
-    -- Tokenize the fsm freeform block
-    local i = 1
-
-    while i < #tokens do
-        local la0 = tokens[i]
-        local la1 = tokens[i + 1]
-        local la2 = tokens[i + 2]
-
-        if la0.token == 'fsm' and la1.token == '<id>' and la2.token == '<freeform>' then
-            local freeform = getTokens(path, la2.lexeme:sub(2, -2), la2.line)
-            tokens[i + 2] = {line = la2.line, token = '{', lexeme = '{'}
-
-            for j = 1, #freeform - 1 do
-                table.insert(tokens, i + 3, freeform[j])
-                i = i + 1
-            end
-
-            table.insert(tokens, i + 3, {line = la2.line, token = '}', lexeme = '}'})
-
-            i = i + 4
-        else
-            i = i + 1
-        end
-    end
-
-    -- Fixes the state freeform blocks
-    local i = 1
-
-    while i < #tokens do
-        local la0 = tokens[i]
-        local la1 = tokens[i + 1]
-
-        if la0.token == '<id>' and la1.token == '<freeform>' then
-            local freeform = getTokens(path, la1.lexeme:sub(2, -2), la1.line)
-            tokens[i + 1] = {line = la1.line, token = '{', lexeme = '{'}
-
-            for j = 1, #freeform - 1 do
-                table.insert(tokens, i + 2, freeform[j])
-                i = i + 1
-            end
-
-            table.insert(tokens, i + 2, {line = la1.line, token = '}', lexeme = '}'})
-            i = i + 3
-        else
-            i = i + 1
-        end
-    end
-
-    return tokens
+    return getTokens(path, source, 1)
 end
 
 -------------------------------------------------------------------------------
@@ -168,20 +121,38 @@ local function newParser(path)
             self.current = self.current + 1
         end,
 
+        expand = function(self)
+            local token, lexeme, line = self:token(), self:lexeme(), self:line()
+
+            if token ~= '<freeform>' then
+                self:error(self:line(), '"{" expected, found "%s"', token)
+            end
+
+            local freeform = getTokens(path, lexeme:sub(2, -2), line)
+            table.remove(self.tokens, self.current)
+            table.insert(self.tokens, self.current, {line = line, token = '{', lexeme = '{'})
+
+            for i = 1, #freeform - 1 do
+                table.insert(self.tokens, self.current + i, freeform[i])
+            end
+
+            table.insert(self.tokens, self.current + #freeform, {line = line, token = '}', lexeme = '}'})
+        end,
+
         parse = function(self)
             local fsm = {states = {}}
 
             -- Parse directives and statements that will be copied verbatim to
-            -- the generated header and cpp generated files
-            while self:token() == 'header' or self:token() == 'cpp' do
-                local token = self:token()
-
-                if fsm[token] then
-                    self:error(self:line(), 'duplicated "%s" block in fsm', token)
-                end
-
+            -- the generated header and c files
+            if self:token() == 'header' then
                 self:match()
-                fsm[token] = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                fsm.header = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                self:match('<freeform>')
+            end
+
+            if self:token() == 'implementation' then
+                self:match()
+                fsm.implementation = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
                 self:match('<freeform>')
             end
 
@@ -189,36 +160,28 @@ local function newParser(path)
             fsm.id = self:lexeme()
             fsm.line = self:line()
             self:match('<id>')
+            fsm.parameters = self:parseParameters()
+            self:expand()
             self:match('{')
 
-            -- Get the name of the class that the fsm will control
-            self:match('class')
-            fsm.class = self:lexeme()
-            self:match('<id>')
-
-            -- Get the name of the field that holds the reference to the class
-            -- instance
-            self:match('as')
-            fsm.ctx = self:lexeme()
-            self:match('<id>')
-            self:match(';')
-
             -- Parse the pre and pos actions
-            while self:token() == 'before' or self:token() == 'after' do
-                local event = self:token()
-
-                if fsm[event] then
-                    self:error(self:line(), 'duplicated event "%s" in fsm', event)
-                end
-
+            if self:token() == 'before' then
                 self:match()
-                fsm[event] = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                fsm.before = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                self:match('<freeform>')
+            end
+
+            if self:token() == 'after' then
+                self:match()
+                fsm.after = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
                 self:match('<freeform>')
             end
 
             -- Parse all the states in the fsm
+            self:parseState(fsm)
+
             while self:token() == '<id>' do
-                self:parseState(fsm, state)
+                self:parseState(fsm)
             end
 
             self:match('}')
@@ -248,7 +211,7 @@ local function newParser(path)
             return fsm
         end,
 
-        parseState = function(self, fsm, state)
+        parseState = function(self, fsm)
             local state = {transitions = {}, id = self:lexeme(), line = self:line()}
             self:match('<id>')
 
@@ -264,17 +227,18 @@ local function newParser(path)
             end
 
             -- Parse the state
+            self:expand()
             self:match('{')
 
-            while self:token() == 'before' or self:token() == 'after' do
-                local event = self:token()
-
-                if state[event] then
-                    self:error(self:line(), 'duplicated event "%s" in "%s"', event, state.id)
-                end
-
+            if self:token() == 'before' then
                 self:match()
-                state[event] = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                state.before = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
+                self:match('<freeform>')
+            end
+
+            if self:token() == 'after' then
+                self:match()
+                state.after = {line = self:line(), lexeme = self:lexeme():sub(2, -2)}
                 self:match('<freeform>')
             end
 
@@ -305,10 +269,10 @@ local function newParser(path)
                 self:match('<id>')
 
                 -- Check for a precondition for the transition
-                if self:token() == '<freeform>' and self:lexeme():sub(1, 1) == '{' then
+                if self:token() == '<freeform>' then
                     transition.precondition = {
                         line = self:line(),
-                        lexeme = self:lexeme():sub(2, -2):gsub('allow', 'return true'):gsub('forbid', 'return false')
+                        lexeme = self:lexeme():sub(2, -2):gsub('allow', 'return 1'):gsub('forbid', 'return 0')
                     }
 
                     self:match('<freeform>')
@@ -446,121 +410,172 @@ end
 
 local function emit(fsm, path)
     local idn = '    '
-    local line = '//#line '
-
 
     local dir, name = ddlt.split(path)
     path = ddlt.realpath(path)
 
-    -- Emit the header
-    local out = assert(io.open(ddlt.join(dir, name, 'h'), 'w'))
-
-    out:write('#pragma once\n\n')
-    out:write('// Generated with FSM compiler, https://github.com/leiradel/luamods/ddlt\n\n')
-
-    if fsm.header then
-        out:write(line, fsm.header.line, ' "', path, '"\n')
-        out:write(fsm.header.lexeme, '\n\n')
-    end
-
-    out:write('#include <stdarg.h>\n\n')
-
-    out:write('class ', fsm.id, ' {\n')
-    out:write('public:\n')
-
-    out:write(idn, 'enum class State {\n')
-    for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, state.id, ',\n')
-    end
-    out:write(idn, '};\n\n')
-
-    out:write(idn, 'typedef void (*VPrintf)(void* ud, const char* fmt, va_list args);\n\n')
-
-    out:write(
-        idn, fsm.id, '(', fsm.class, '& ctx) ',
-        ': ', fsm.ctx,'(ctx)',
-        ', __state(State::', fsm.begin, ')',
-        ', __vprintf(nullptr)',
-        ', __vprintfud(nullptr)',
-        ' {}\n'
-    )
-
-    out:write(
-        idn, fsm.id, '(', fsm.class, '& ctx, VPrintf printer, void* printerud) ',
-        ': ', fsm.ctx,'(ctx)',
-        ', __state(State::', fsm.begin, ')',
-        ', __vprintf(printer)',
-        ', __vprintfud(printerud)',
-        ' {}\n\n'
-    )
-
-    out:write(idn, 'State currentState() const { return __state; }\n')
-    out:write(idn, 'bool canTransitionTo(const State state) const;\n\n')
-
-    out:write('#ifdef DEBUG_FSM\n')
-    out:write(idn, 'const char* stateName(State state) const;\n')
-    out:write(idn, 'void printf(const char* fmt, ...);\n')
-    out:write('#endif\n\n')
-
+    -- Collect and order all transitions
     local allTransitions = {}
-    local visited = {}
 
-    for _, state in ipairs(fsm.states) do
-        for _, transition in ipairs(state.transitions) do
-            if not visited[transition.id] then
-                visited[transition.id] = true
-                allTransitions[#allTransitions + 1] = transition
+    do
+        local visited = {}
+
+        for _, state in ipairs(fsm.states) do
+            for _, transition in ipairs(state.transitions) do
+                if not visited[transition.id] then
+                    visited[transition.id] = true
+                    allTransitions[#allTransitions + 1] = transition
+                end
             end
         end
     end
 
     table.sort(allTransitions, function(e1, e2) return e1.id < e2.id end)
 
+    -- Emit the header
+    local out = assert(io.open(ddlt.join(dir, name, 'h'), 'w'))
+    local guard = string.format('%s_H__', name:upper())
+
+    out:write('#ifndef ', guard, '\n')
+    out:write('#define ', guard, '\n\n')
+    out:write('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n\n')
+
+    out:write('#include <stdarg.h>\n\n')
+
+    -- Header free form code
+    if fsm.header then
+        out:write('/*#line ', fsm.header.line, ' "', path, '"*/\n')
+        out:write(fsm.header.lexeme, '\n\n')
+    end
+
+    -- The states enumeration
+    out:write('/* FSM states */\n')
+    out:write('typedef enum {\n')
+
+    for _, state in ipairs(fsm.states) do
+        out:write(idn, fsm.id, '_', state.id, ',\n')
+    end
+
+    out:write('}\n')
+    out:write(fsm.id, '_state_t;\n\n')
+
+    -- The FSM state
+    out:write('/* The FSM */\n')
+    out:write('typedef struct {\n')
+    out:write(idn, fsm.id, '_state_t state;\n')
+
+    for _, parameter in ipairs(fsm.parameters) do
+        out:write(idn, parameter.type, ' ', parameter.id, ';\n')
+    end
+    
+    out:write('\n')
+    out:write('#ifdef DEBUG_FSM\n')
+    out:write(idn, '/* Set those after calling ', fsm.id, '_init when DEBUG_FSM is defined */\n')
+    out:write(idn, 'void (*vprintf)(void* const ud, char const* const fmt, va_list args);\n')
+    out:write(idn, 'void* vprintf_ud;\n')
+    out:write('#endif\n')
+    out:write('}\n')
+    out:write(fsm.id, '_t;\n\n')
+
+    -- The initialization function
+    out:write('/* Initialization */\n')
+    out:write('void ', fsm.id, '_init(', fsm.id, '_t* const self')
+
+    for _, parameter in ipairs(fsm.parameters) do
+        out:write(', ', parameter.type, ' const ', parameter.id)
+    end
+
+    out:write(');\n\n')
+
+    -- Query functions
+    out:write('/* Query */\n')
+    out:write(fsm.id, '_state_t ', fsm.id, '_current_state(', fsm.id, '_t const* const self);\n')
+    out:write('int ', fsm.id, '_can_transition_to(', fsm.id, '_t const* const self, ', fsm.id, '_state_t const next);\n\n')
+
+    -- Transitions
+    out:write('/* Transitions */\n')
+
     for _, transition in ipairs(allTransitions) do
-        out:write(idn, 'bool ', transition.id, '(')
-        local comma = ''
+        out:write('int ', fsm.id, '_', transition.id, '(', fsm.id, '_t* const self')
 
         for _, parameter in ipairs(transition.parameters) do
-            out:write(comma, parameter.type, ' ', parameter.id)
-            comma = ', '
+            out:write(', ', parameter.type, ' ', parameter.id)
         end
 
         out:write(');\n')
     end
 
     out:write('\n')
-    out:write('protected:\n')
-    out:write(idn, 'bool before() const;\n')
-    out:write(idn, 'bool before(State state) const;\n')
-    out:write(idn, 'void after() const;\n')
-    out:write(idn, 'void after(State state) const;\n\n')
-    out:write(idn, fsm.class, '& ', fsm.ctx, ';\n')
-    out:write(idn, 'State __state;\n')
-    out:write(idn, 'VPrintf __vprintf;\n')
-    out:write(idn, 'void* __vprintfud;\n')
-    out:write('};\n')
+
+    -- Debug
+    out:write('/* Debug */\n')
+    out:write('#ifdef DEBUG_FSM\n')
+    out:write('char const* ', fsm.id, '_state_name(', fsm.id, '_state_t const state);\n')
+    out:write('#endif\n\n')
+
+    -- Finish up
+    out:write('#endif /* ', guard, ' */\n')
     out:close()
 
     -- Emit the code
-    local out = assert(io.open(ddlt.join(dir, name, 'cpp'), 'w'))
+    local out = assert(io.open(ddlt.join(dir, name, 'c'), 'w'))
 
     -- Include the necessary headers
-    out:write('// Generated with FSM compiler, https://github.com/leiradel/luamods/ddlt\n\n')
+    out:write('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n\n')
     out:write('#include "', name, '.h"\n\n')
+    out:write('#include <stddef.h>\n\n')
 
-    if fsm.cpp then
-        out:write(line, fsm.cpp.line, ' "', path, '"\n')
-        out:write(fsm.cpp.lexeme, '\n\n')
+    -- Implementation free form code
+    if fsm.implementation then
+        out:write('/*#line ', fsm.implementation.line, ' "', path, '"*/\n')
+        out:write(fsm.implementation.lexeme, '\n\n')
     end
 
-    out:write('bool ', fsm.id, '::canTransitionTo(const State state) const {\n')
-    out:write(idn, 'switch (__state) {\n')
+    -- Helper printf-like function
+    out:write('#ifdef DEBUG_FSM\n')
+    out:write('static void fsmprintf(', fsm.id, '_t* const self, const char* fmt, ...) {\n')
+    out:write(idn, 'if (self->vprintf != NULL) {\n')
+    out:write(idn, idn, 'va_list args;\n')
+    out:write(idn, idn, 'va_start(args, fmt);\n')
+    out:write(idn, idn, 'self->vprintf(self->vprintf_ud, fmt, args);\n');
+    out:write(idn, idn, 'va_end(args);\n')
+    out:write(idn, '}\n')
+    out:write('}\n\n')
+    out:write('#define PRINTF(self, fmt...) do { fsmprintf(self, fmt); } while (0)\n')
+    out:write('#else\n')
+    out:write('#define PRINTF(self, fmt...) do {} while (0)\n')
+    out:write('#endif\n\n')
+
+    -- The initialization function
+    out:write('/* Initialization */\n')
+    out:write('void ', fsm.id, '_init(', fsm.id, '_t* const self')
+
+    for _, parameter in ipairs(fsm.parameters) do
+        out:write(', ', parameter.type, ' const ', parameter.id)
+    end
+
+    out:write(') {\n')
+    out:write(idn, 'self->state = ', fsm.id, '_', fsm.begin, ';\n\n')
+
+    for _, parameter in ipairs(fsm.parameters) do
+        out:write(idn, 'self->', parameter.id, ' = ', parameter.id, ';\n')
+    end
+
+    out:write('}\n\n')
+
+    -- Query functions
+    out:write(fsm.id, '_state_t ', fsm.id, '_current_state(', fsm.id, '_t const* const self) {\n')
+    out:write(idn, 'return self->state;\n')
+    out:write('}\n\n')
+
+    out:write('int ', fsm.id, '_can_transition_to(', fsm.id, '_t const* const self, ', fsm.id, '_state_t const next) {\n')
+    out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case State::', state.id, ':\n')
+        out:write(idn, idn, 'case ', fsm.id, '_', state.id, ':\n')
 
         if #state.transitions ~= 0 then
-            out:write(idn, idn, idn, 'switch (state) {\n')
+            out:write(idn, idn, idn, 'switch (next) {\n')
 
             local valid, sorted = {}, {}
 
@@ -575,64 +590,42 @@ local function emit(fsm, path)
             table.sort(sorted, function(id1, id2) return id1 < id2 end)
 
             for _, stateId in ipairs(sorted) do
-                out:write(idn, idn, idn, idn, 'case State::', stateId, ':\n')
+                out:write(idn, idn, idn, idn, 'case ', fsm.id, '_', stateId, ':\n')
             end
 
-            out:write(idn, idn, idn, idn, idn, 'return true;\n')
+            out:write(idn, idn, idn, idn, idn, 'return 1;\n')
             out:write(idn, idn, idn, idn, 'default: break;\n')
             out:write(idn, idn, idn, '}\n')
         end
 
-        out:write(idn, idn, idn, 'break;\n')
+        out:write(idn, idn, idn, 'break;\n\n')
     end
 
     out:write(idn, idn, 'default: break;\n')
     out:write(idn, '}\n\n')
-    out:write(idn, 'return false;\n')
+    out:write(idn, 'return 0;\n')
     out:write('}\n\n')
 
-    -- Emit utility methods
-    out:write('#ifdef DEBUG_FSM\n')
-    out:write('const char* ', fsm.id, '::stateName(State state) const {\n')
-    out:write(idn, 'switch (state) {\n')
-
-    for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case State::', state.id, ': return "', state.id, '";\n')
-    end
-
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n\n')
-    out:write(idn, 'return NULL;\n')
-    out:write('}\n\n')
-    out:write('void ', fsm.id, '::printf(const char* fmt, ...) {\n')
-    out:write(idn, 'if (__vprintf != nullptr) {\n')
-    out:write(idn, idn, 'va_list args;\n')
-    out:write(idn, idn, 'va_start(args, fmt);\n')
-    out:write(idn, idn, '__vprintf(__vprintfud, fmt, args);\n');
-    out:write(idn, idn, 'va_end(args);\n')
-    out:write(idn, '}\n')
-    out:write('}\n')
-    out:write('#endif\n\n')
-
-    -- Emit the global before event
-    out:write('bool ', fsm.id, '::before() const {\n')
+    -- Global before event
+    out:write('static int global_before(', fsm.id, '_t* const self) {\n')
+    out:write(idn, '(void)self;\n')
 
     if fsm.before then
-        out:write(line, fsm.before.line, ' "', path, '"\n')
+        out:write('/*#line ', fsm.before.line, ' "', path, '"*/\n')
         out:write(fsm.before.lexeme, '\n')
     end
 
-    out:write(idn, 'return true;\n')
+    out:write(idn, 'return 1;\n')
     out:write('}\n\n')
 
-    -- Emit the state-specific before events
-    out:write('bool ', fsm.id, '::before(State state) const {\n')
-    out:write(idn, 'switch (state) {\n')
+    -- State-specific before events
+    out:write('static int local_before(', fsm.id, '_t* const self) {\n')
+    out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
         if state.before then
-            out:write(idn, idn, 'case State::', state.id, ': {\n')
-            out:write(line, state.before.line, ' "', path, '"\n')
+            out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': {\n')
+            out:write('/*#line ', state.before.line, ' "', path, '"*/\n')
             out:write(state.before.lexeme, '\n')
             out:write(idn, idn, '}\n')
             out:write(idn, idn, 'break;\n');
@@ -641,27 +634,28 @@ local function emit(fsm, path)
 
     out:write(idn, idn, 'default: break;\n')
     out:write(idn, '}\n\n')
-    out:write(idn, 'return true;\n')
+    out:write(idn, 'return 1;\n')
     out:write('}\n\n')
 
-    -- Emit the global after event
-    out:write('void ', fsm.id, '::after() const {\n')
+    -- Global after event
+    out:write('static void global_after(', fsm.id, '_t* const self) {\n')
+    out:write(idn, '(void)self;\n')
 
     if fsm.after then
-        out:write(line, fsm.after.line, ' "', path, '"\n')
+        out:write('/*#line ', fsm.after.line, ' "', path, '"*/\n')
         out:write(fsm.after.lexeme, '\n')
     end
 
     out:write('}\n\n')
 
-    -- Emit the state-specific after events
-    out:write('void ', fsm.id, '::after(State state) const {\n')
-    out:write(idn, 'switch (state) {\n')
+    -- State-specific after events
+    out:write('static void local_after(', fsm.id, '_t* const self) {\n')
+    out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
         if state.after then
-            out:write(idn, idn, 'case State::', state.id, ': {\n')
-            out:write(line, state.after.line, ' "', path, '"\n')
+            out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': {\n')
+            out:write('/*#line ', state.after.line, ' "', path, '"*/\n')
             out:write(state.after.lexeme, '\n')
             out:write(idn, idn, '}\n')
             out:write(idn, idn, 'break;\n');
@@ -672,18 +666,16 @@ local function emit(fsm, path)
     out:write(idn, '}\n')
     out:write('}\n\n')
 
-    -- Emit the transitions
+    -- Transitions
     for _, transition in ipairs(allTransitions) do
-        out:write('bool ', fsm.id, '::', transition.id, '(')
-        local comma = ''
+        out:write('int ', fsm.id, '_', transition.id, '(', fsm.id, '_t* const self')
 
         for _, parameter in ipairs(transition.parameters) do
-            out:write(comma, parameter.type, ' ', parameter.id)
-            comma = ', '
+            out:write(', ', parameter.type, ' ', parameter.id)
         end
 
         out:write(') {\n')
-        out:write(idn, 'switch (__state) {\n')
+        out:write(idn, 'switch (self->state) {\n')
 
         local valid, invalid = {}, {}
 
@@ -698,33 +690,29 @@ local function emit(fsm, path)
         for _, state in ipairs(valid) do
             local transition2 = state.transitions[transition.id]
 
-            out:write(idn, idn, 'case State::', state.id, ': {\n')
-            out:write(idn, idn, idn, 'if (!before()) {\n')
-            out:write('#ifdef DEBUG_FSM\n')
-            out:write(idn, idn, idn, idn, 'printf(\n')
+            out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': {\n')
+            out:write(idn, idn, idn, 'if (!global_before(self)) {\n')
+            out:write(idn, idn, idn, idn, 'PRINTF(\n')
             out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed global precondition while switching to %s",\n')
-            out:write(idn, idn, idn, idn, idn, '__FUNCTION__, __LINE__, stateName(State::', transition2.target.id, ')\n')
-            out:write(idn, idn, idn, idn, ');\n')
-            out:write('#endif\n\n')
-            out:write(idn, idn, idn, idn, 'return false;\n')
+            out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
+            out:write(idn, idn, idn, idn, ');\n\n')
+            out:write(idn, idn, idn, idn, 'return 0;\n')
             out:write(idn, idn, idn, '}\n\n')
-            out:write(idn, idn, idn, 'if (!before(__state)) {\n')
-            out:write('#ifdef DEBUG_FSM\n')
-            out:write(idn, idn, idn, idn, 'printf(\n')
+            out:write(idn, idn, idn, 'if (!local_before(self)) {\n')
+            out:write(idn, idn, idn, idn, 'PRINTF(\n')
             out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed state precondition while switching to %s",\n')
-            out:write(idn, idn, idn, idn, idn, '__FUNCTION__, __LINE__, stateName(State::', transition2.target.id, ')\n')
-            out:write(idn, idn, idn, idn, ');\n')
-            out:write('#endif\n\n')
-            out:write(idn, idn, idn, idn, 'return false;\n')
+            out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
+            out:write(idn, idn, idn, idn, ');\n\n')
+            out:write(idn, idn, idn, idn, 'return 0;\n')
             out:write(idn, idn, idn, '}\n\n')
 
             if transition2.precondition then
-                out:write(line, transition2.precondition.line, ' "', path, '"\n')
+                out:write('/*#line ', transition2.precondition.line, ' "', path, '"*/\n')
                 out:write(transition2.precondition.lexeme, '\n')
             end
 
             if transition2.type == 'state' then
-                out:write(idn, idn, idn, '__state = State::', transition2.target.id, ';\n')
+                out:write(idn, idn, idn, 'self->state = ', fsm.id, '_', transition2.target.id, ';\n\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
                     local list = {}
@@ -738,15 +726,15 @@ local function emit(fsm, path)
 
                 if #transition2.steps == 1 then
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'bool __ok = ', transition2.steps[1].id, '(', args, ');\n')
+                    out:write(idn, idn, idn, 'const int ok = ', transition2.steps[1].id, '(', args, ');\n')
                 else
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'bool __ok = ', transition2.steps[1].id, '(', args, ') &&\n')
+                    out:write(idn, idn, idn, 'const int ok = ', transition2.steps[1].id, '(', args, ') &&\n')
 
                     for i = 2, #transition2.steps do
                         local args = arguments(transition2.steps[i].arguments)
                         local eol = i == #transition2.steps and ';' or ' &&'
-                        out:write(idn, idn, idn, '            ', transition2.steps[i].id, '(', args, ')', eol, '\n')
+                        out:write(idn, idn, idn, '               ', transition2.steps[i].id, '(', args, ')', eol, '\n')
                     end
 
                     out:write('\n')
@@ -754,42 +742,51 @@ local function emit(fsm, path)
             end
 
             if transition2.type == 'state' then
-                out:write(idn, idn, idn, 'after(__state);\n')
-                out:write(idn, idn, idn, 'after();\n\n')
-                out:write('#ifdef DEBUG_FSM\n')
-                out:write(idn, idn, idn, 'printf(\n')
+                out:write(idn, idn, idn, 'local_after(self);\n')
+                out:write(idn, idn, idn, 'global_after(self);\n\n')
+                out:write(idn, idn, idn, 'PRINTF(\n')
                 out:write(idn, idn, idn, idn, '"FSM %s:%u Switched to %s",\n')
-                out:write(idn, idn, idn, idn, '__FUNCTION__, __LINE__, stateName(State::', transition2.target.id, ')\n')
-                out:write(idn, idn, idn, ');\n')
-                out:write('#endif\n')
-                out:write(idn, idn, idn, 'return true;\n')
+                out:write(idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
+                out:write(idn, idn, idn, ');\n\n')
+                out:write(idn, idn, idn, 'return 1;\n')
             elseif transition2.type == 'sequence' then
-                out:write(idn, idn, idn, 'if (__ok) {\n')
-                out:write(idn, idn, idn, idn, 'after(__state);\n')
-                out:write(idn, idn, idn, idn, 'after();\n\n')
+                out:write(idn, idn, idn, 'if (ok) {\n')
+                out:write(idn, idn, idn, idn, 'local_after(self);\n')
+                out:write(idn, idn, idn, idn, 'global_after(self);\n\n')
                 out:write(idn, idn, idn, '}\n')
                 out:write(idn, idn, idn, 'else {\n')
-                out:write('#ifdef DEBUG_FSM\n')
-                out:write(idn, idn, idn, idn, 'printf(\n')
+                out:write(idn, idn, idn, idn, 'PRINTF(\n')
                 out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed to switch to %s",\n');
-                out:write(idn, idn, idn, idn, idn, '__FUNCTION__, __LINE__, stateName(State::', transition2.target.id, ')\n')
+                out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
                 out:write(idn, idn, idn, idn, ');\n')
-                out:write('#endif\n')
                 out:write(idn, idn, idn, '}\n\n')
                 out:write(idn, idn, idn, 'return __ok;\n')
             end
 
-            out:write(idn, idn, '}\n')
-            out:write(idn, idn, 'break;\n')
-
-            out:write('\n')
+            out:write(idn, idn, '}\n\n')
+            out:write(idn, idn, 'break;\n\n')
         end
 
         out:write(idn, idn, 'default: break;\n')
         out:write(idn, '}\n\n')
-        out:write(idn, 'return false;\n')
+        out:write(idn, 'return 0;\n')
         out:write('}\n\n')
     end
+
+    -- State name
+    out:write('#ifdef DEBUG_FSM\n')
+    out:write('const char* ', fsm.id, '_state_name(', fsm.id, '_state_t const state) {\n')
+    out:write(idn, 'switch (state) {\n')
+
+    for _, state in ipairs(fsm.states) do
+        out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': return "', state.id, '";\n')
+    end
+
+    out:write(idn, idn, 'default: break;\n')
+    out:write(idn, '}\n\n')
+    out:write(idn, 'return "unknown state";\n')
+    out:write('}\n')
+    out:write('#endif\n')
 
     out:close()
 
