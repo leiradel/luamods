@@ -81,17 +81,17 @@ typedef enum {
     /* Mask to get the ease function */
     EASE_MASK = 0xff0000
 }
-state_t;
+State;
 
 /* The type of an ease function in easing.inl */
-typedef lua_Number(*ease_func_t)(lua_Number);
+typedef lua_Number(*EaseFunc)(lua_Number);
 
 /* The full change state, fields sorted by alignment descending */
-typedef struct change_t change_t;
-struct change_t {
+typedef struct Change Change;
+struct Change {
     union {
         /* The ease function to use with this change */
-        ease_func_t ease_func;
+        EaseFunc ease_func;
 
         /* The index of the next free change in the free list */
         size_t next_free;
@@ -154,10 +154,10 @@ typedef struct {
      */
     unsigned change_tag;
 }
-userdata_t;
+Userdata;
 
 /* The current array of changes */
-static change_t* s_changes;
+static Change* s_changes;
 
 /* The number of entries used in the array */
 static size_t s_num_changes;
@@ -169,7 +169,7 @@ static size_t s_reserved_changes;
 static size_t s_free;
 
 /* An array with all the ease functions from easing.inl */
-static const ease_func_t s_ease_funcs[] = {
+static const EaseFunc s_ease_funcs[] = {
     LinearInterpolation,
     BackEaseIn,
     BackEaseOut,
@@ -204,11 +204,11 @@ static const ease_func_t s_ease_funcs[] = {
 };
 
 /* Allocates a new change */
-static change_t* alloc(void) {
+static Change* alloc(void) {
     /* If the free list is not empty... */
     if (s_free != INVALID_INDEX) {
         /* Get a change from the head of the free list */
-        change_t* const change = s_changes + s_free;
+        Change* const change = s_changes + s_free;
         s_free = change->u.next_free;
         return change;
     }
@@ -220,8 +220,8 @@ static change_t* alloc(void) {
                              ? CHANGEME_INITIAL_ARRAY_SIZE
                              : s_reserved_changes * 2;
 
-        size_t const size = sizeof(change_t) * reserve;
-        change_t* const changes = (change_t*)realloc(s_changes, size);
+        size_t const size = sizeof(Change) * reserve;
+        Change* const changes = (Change*)realloc(s_changes, size);
 
         if (changes == NULL) {
             return NULL;
@@ -232,7 +232,7 @@ static change_t* alloc(void) {
     }
 
     /* Grab an unused element in the array */
-    change_t* const change = s_changes + s_num_changes++;
+    Change* const change = s_changes + s_num_changes++;
 
     /* Set the tag to 0 on freshly allocated changes */
     change->tag = 0;
@@ -241,7 +241,7 @@ static change_t* alloc(void) {
 }
 
 /* Deallocates a change */
-static void free_change(lua_State* const L, change_t* const change) {
+static void free_change(lua_State* const L, Change* const change) {
     /* Increment the tag so that any existing references are considered dead */
     change->tag++;
 
@@ -261,10 +261,10 @@ static void free_change(lua_State* const L, change_t* const change) {
 }
 
 /* Checks for a valid change in the Lua stack */
-static change_t* check(lua_State* const L, int index) {
+static Userdata const* check(lua_State* const L, int index) {
     /* Get the change from the array according to the userdata */
-    userdata_t* const ud = (userdata_t*)luaL_checkudata(L, 1, "change");
-    change_t* const change = s_changes + ud->change_index;
+    Userdata const* const ud = (Userdata*)luaL_checkudata(L, 1, "change");
+    Change* const change = s_changes + ud->change_index;
 
     /* A change is only valid if its tag matches the one from the reference */
     if (change->tag == ud->change_tag) {
@@ -276,7 +276,7 @@ static change_t* check(lua_State* const L, int index) {
 
 /* Starts a paused change */
 static int start(lua_State* const L) {
-    change_t* const change = check(L, 1);
+    Change* const change = check(L, 1);
 
     if (change != NULL && (change->state & STATE_MASK) == STATE_PAUSED) {
         /* Make it run */
@@ -293,7 +293,7 @@ static int start(lua_State* const L) {
 
 /* Kills a running change */
 static int kill(lua_State* const L) {
-    change_t* const change = check(L, 1);
+    Change* const change = check(L, 1);
 
     if (change != NULL) {
         free_change(L, change);
@@ -308,7 +308,7 @@ static int kill(lua_State* const L) {
 
 /* Returns the status of a change */
 static int status(lua_State* const L) {
-    change_t* const change = check(L, 1);
+    Change* const change = check(L, 1);
 
     if (change == NULL) {
         lua_pushliteral(L, "dead");
@@ -339,7 +339,7 @@ static int status(lua_State* const L) {
 
 /* Cleans-up a change collected during a Lua GC cycle */
 static int gc(lua_State* const L) {
-    change_t* const change = check(L, 1);
+    Change* const change = check(L, 1);
 
     if (change != NULL && (change->state & STATE_MASK) == STATE_PAUSED) {
         /**
@@ -356,7 +356,7 @@ static int gc(lua_State* const L) {
 
 /* Returns an user-friendly string for the change */
 static int tostring(lua_State* const L) {
-    userdata_t* const ud = (userdata_t*)luaL_checkudata(L, 1, "change");
+    Userdata* const ud = (Userdata*)luaL_checkudata(L, 1, "change");
 
     char str[64];
     int const len = snprintf(str, sizeof(str), "change(%zu,%u)", ud->change_index, ud->change_tag);
@@ -367,7 +367,7 @@ static int tostring(lua_State* const L) {
 
 /* Creates a change, to == 0 means that target values are relative */
 static int create(lua_State* const L, int const to) {
-    change_t* const change = alloc();
+    Change* const change = alloc();
 
     if (change == NULL) {
         return luaL_error(L, "out of memory");
@@ -486,7 +486,7 @@ static int create(lua_State* const L, int const to) {
     }
 
     /* Create and initialize the userdata object */
-    userdata_t* const ud = (userdata_t*)lua_newuserdata(L, sizeof(*ud));
+    Userdata* const ud = (Userdata*)lua_newuserdata(L, sizeof(*ud));
     ud->change_index = change - s_changes;
     ud->change_tag = change->tag;
 
@@ -540,7 +540,7 @@ static int update(lua_State* const L) {
     size_t const count = s_num_changes;
 
     for (i = 0; i < count; i++) {
-        change_t* const change = s_changes + i;
+        Change* const change = s_changes + i;
 
         if ((change->state & STATE_MASK) != STATE_RUNNING) {
             /* Only process active changes */
