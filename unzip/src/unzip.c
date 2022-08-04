@@ -285,8 +285,8 @@ static int l_crc32(lua_State* const L) {
     size_t length;
     char const* const string = luaL_checklstring(L, 1, &length);
 
-    unsigned long crc32(unsigned long crc, const unsigned char FAR *buf, uInt len);
-    lua_pushinteger(L, crc32(0, (const unsigned char FAR*)string, length));
+    unsigned long crc32(unsigned long crc, const unsigned char* buf, uInt len);
+    lua_pushinteger(L, crc32(0, (const unsigned char*)string, length));
 
     return 1;
 }
