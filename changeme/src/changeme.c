@@ -37,12 +37,8 @@ SOFTWARE.
 | Compile-time configuration                                                   |
 \-----------------------------------------------------------------------------*/
 
-#ifndef CHANGEME_FIELD_NAMES_SIZE
-#define CHANGEME_FIELD_NAMES_SIZE 24
-#endif
-
-#ifndef CHANGEME_MAX_FIELDS
-#define CHANGEME_MAX_FIELDS 4
+#ifndef CHANGEME_MAX_PAIRS
+#define CHANGEME_MAX_PAIRS 4
 #endif
 
 #ifndef CHANGEME_INITIAL_ARRAY_SIZE
@@ -53,6 +49,7 @@ SOFTWARE.
 | Implementation, don't bother                                                 |
 \-----------------------------------------------------------------------------*/
 
+#define CHANGE_MT "change"
 #define INVALID_INDEX SIZE_MAX
 
 /* States and flags */
@@ -76,7 +73,7 @@ typedef enum {
     FLAG_REPEAT = 1 << 9,
 
     /* Affect the fields only once at the end of the duration period */
-    FLAG_AFTER = 1 << 10,
+    FLAG_FINISHED = 1 << 10,
 
     /* Mask to get the ease function */
     EASE_MASK = 0xff0000
@@ -87,22 +84,15 @@ State;
 typedef lua_Number(*EaseFunc)(lua_Number);
 
 /* The full change state, fields sorted by alignment descending */
-typedef struct Change Change;
-struct Change {
-    union {
-        /* The ease function to use with this change */
-        EaseFunc ease_func;
-
-        /* The index of the next free change in the free list */
-        size_t next_free;
-    }
-    u;
+typedef struct {
+    /* The ease function to use with this change */
+    EaseFunc ease_func;
 
     /* The initial values for the fields */
-    lua_Number initial_values[CHANGEME_MAX_FIELDS];
+    lua_Number initial_values[CHANGEME_MAX_PAIRS];
 
     /* The amount of change for the duration period */
-    lua_Number delta_values[CHANGEME_MAX_FIELDS];
+    lua_Number delta_values[CHANGEME_MAX_PAIRS];
 
     /* The duration of the change in seconds */
     lua_Number duration;
@@ -110,28 +100,31 @@ struct Change {
     /* The elapsed time since the change was started */
     lua_Number elapsed_time;
 
+    union {
+        // The number of values used in the array
+        size_t num_values;
+
+        /* The index of the next free change in the free list */
+        size_t next_free;
+    }
+    u;
+
     /* In what state this change is, and its flags */
     unsigned state;
 
     /* The change tag to differentiate living and dead changes apart */
     unsigned tag;
 
-    /* The reference to the object that keeps the fields */
-    int table_ref;
+    /* The reference to the change object */
+    int my_ref;
 
     /**
      * The reference to a callback function that will be called when the
      * change finished, if provided
      */
     int callback_ref;
-
-    /**
-     * The names of the fields in the object, each name ends with 0, the list
-     * also ends with a 0 (meaning that the last name is followed by two
-     * zeroes)
-     */
-    char field_names[CHANGEME_FIELD_NAMES_SIZE];
-};
+}
+Change;
 
 /* The userdata that represents a change in Lua space */
 typedef struct {
@@ -204,13 +197,13 @@ static const EaseFunc s_ease_funcs[] = {
 };
 
 /* Allocates a new change */
-static Change* alloc(void) {
+static size_t alloc_change(void) {
     /* If the free list is not empty... */
     if (s_free != INVALID_INDEX) {
         /* Get a change from the head of the free list */
-        Change* const change = s_changes + s_free;
-        s_free = change->u.next_free;
-        return change;
+        size_t const index = s_free;
+        s_free = s_changes[index].u.next_free;
+        return index;
     }
 
     /* If the array is full... */
@@ -224,7 +217,7 @@ static Change* alloc(void) {
         Change* const changes = (Change*)realloc(s_changes, size);
 
         if (changes == NULL) {
-            return NULL;
+            return INVALID_INDEX;
         }
 
         s_changes = changes;
@@ -232,93 +225,89 @@ static Change* alloc(void) {
     }
 
     /* Grab an unused element in the array */
-    Change* const change = s_changes + s_num_changes++;
+    size_t const index = s_num_changes++;
 
     /* Set the tag to 0 on freshly allocated changes */
-    change->tag = 0;
+    s_changes[index].tag = 0;
 
-    return change;
+    return index;
 }
 
 /* Deallocates a change */
-static void free_change(lua_State* const L, Change* const change) {
+static void free_change(lua_State* const L, size_t const index) {
+    Change* const change = s_changes + index;
+
     /* Increment the tag so that any existing references are considered dead */
     change->tag++;
 
     /* Put the change in the free list */
     change->u.next_free = s_free;
-    s_free = change - s_changes;
+    s_free = index;
 
     /* Make sure it won't be processed anymore */
     change->state = STATE_UNUSED;
 
     /* Release the references to the Lua values */
-    luaL_unref(L, LUA_REGISTRYINDEX, change->table_ref);
-
-    if (change->callback_ref != LUA_NOREF) {
-        luaL_unref(L, LUA_REGISTRYINDEX, change->callback_ref);
-    }
+    luaL_unref(L, LUA_REGISTRYINDEX, change->my_ref);
+    luaL_unref(L, LUA_REGISTRYINDEX, change->callback_ref);
 }
 
 /* Checks for a valid change in the Lua stack */
-static Userdata const* check(lua_State* const L, int index) {
-    /* Get the change from the array according to the userdata */
-    Userdata const* const ud = (Userdata*)luaL_checkudata(L, 1, "change");
-    Change* const change = s_changes + ud->change_index;
+static size_t check_change(lua_State* const L, int ndx) {
+    Userdata const* const ud = (Userdata*)luaL_checkudata(L, 1, CHANGE_MT);
 
     /* A change is only valid if its tag matches the one from the reference */
-    if (change->tag == ud->change_tag) {
-        return change;
+    if (s_changes[ud->change_index].tag == ud->change_tag) {
+        return ud->change_index;
     }
 
-    return NULL;
+    return INVALID_INDEX;
 }
 
 /* Starts a paused change */
-static int start(lua_State* const L) {
-    Change* const change = check(L, 1);
+static int l_start(lua_State* const L) {
+    size_t const index = check_change(L, 1);
 
-    if (change != NULL && (change->state & STATE_MASK) == STATE_PAUSED) {
-        /* Make it run */
-        change->state &= ~STATE_MASK;
-        change->state |= STATE_RUNNING;
-        return 0;
+    if (index != INVALID_INDEX) {
+        Change* const change = s_changes + index;
+
+        if ((change->state & STATE_MASK) == STATE_PAUSED) {
+            /* Make it run */
+            change->state &= ~STATE_MASK;
+            change->state |= STATE_RUNNING;
+
+            return 0;
+        }
     }
-    else {
-        lua_pushnil(L);
-        lua_pushliteral(L, "change is not paused");
-        return 2;
-    }
+
+    lua_pushnil(L);
+    lua_pushliteral(L, "change is not paused");
+    return 2;
 }
 
 /* Kills a running change */
-static int kill(lua_State* const L) {
-    Change* const change = check(L, 1);
+static int l_kill(lua_State* const L) {
+    size_t const index = check_change(L, 1);
 
-    if (change != NULL) {
-        free_change(L, change);
+    if (index != INVALID_INDEX) {
+        free_change(L, index);
         return 0;
     }
-    else {
-        lua_pushnil(L);
-        lua_pushliteral(L, "change is already dead");
-        return 2;
-    }
+
+    lua_pushnil(L);
+    lua_pushliteral(L, "change is already dead");
+    return 2;
 }
 
 /* Returns the status of a change */
-static int status(lua_State* const L) {
-    Change* const change = check(L, 1);
+static int l_status(lua_State* const L) {
+    size_t const index = check_change(L, 1);
+    unsigned const state = index == INVALID_INDEX ? STATE_UNUSED : s_changes[index].state;
 
-    if (change == NULL) {
-        lua_pushliteral(L, "dead");
-        return 1;
-    }
-
-    switch (change->state & STATE_MASK) {
+    switch (state & STATE_MASK) {
         case STATE_UNUSED: {
-            /* Should never happen */
-            return luaL_error(L, "reference to an unused change");
+            lua_pushliteral(L, "dead");
+            return 1;
         }
 
         case STATE_PAUSED: {
@@ -334,29 +323,29 @@ static int status(lua_State* const L) {
     }
 
     /* New state added, add it to the above switch */
-    return luaL_error(L, "unhandled state in :status()");
+    return luaL_error(L, "unhandled state in status() method");
 }
 
 /* Cleans-up a change collected during a Lua GC cycle */
-static int gc(lua_State* const L) {
-    Change* const change = check(L, 1);
+static int l_gc(lua_State* const L) {
+    size_t const index = check_change(L, 1);
 
-    if (change != NULL && (change->state & STATE_MASK) == STATE_PAUSED) {
+    if (index != INVALID_INDEX && (s_changes[index].state & STATE_MASK) == STATE_PAUSED) {
         /**
          * Only free changes here if they are paused, since there are no
          * references to it left in Lua land and they cannot be started
          * anymore. Other changes that are active will run to completion and
          * be freed inside the update function.
          */
-        free_change(L, change);
+        free_change(L, index);
     }
 
     return 0;
 }
 
 /* Returns an user-friendly string for the change */
-static int tostring(lua_State* const L) {
-    Userdata* const ud = (Userdata*)luaL_checkudata(L, 1, "change");
+static int l_tostring(lua_State* const L) {
+    Userdata* const ud = (Userdata*)luaL_checkudata(L, 1, CHANGE_MT);
 
     char str[64];
     int const len = snprintf(str, sizeof(str), "change(%zu,%u)", ud->change_index, ud->change_tag);
@@ -366,91 +355,19 @@ static int tostring(lua_State* const L) {
 }
 
 /* Creates a change, to == 0 means that target values are relative */
-static int create(lua_State* const L, int const to) {
-    Change* const change = alloc();
+static int create_change(lua_State* const L, int const to) {
+    size_t const index = alloc_change();
 
-    if (change == NULL) {
+    if (index == INVALID_INDEX) {
         return luaL_error(L, "out of memory");
     }
 
-    /* The first index is the object where the fields exist */
-    int stack_index = 2;
+    Change* change = s_changes + index;
+    int stack_index = 1;
 
-    /* Iterate over pairs of <field name, target value> */
-    {
-        /* aux will build out field names in the change */
-        char* aux = change->field_names;
-        char const* const end = change->field_names + sizeof(change->field_names);
-
-        /* Keep track of the number of fields since there's a limit */
-        size_t num_fields = 0;
-        size_t const max_fields = sizeof(change->delta_values) / sizeof(change->delta_values[0]);
-
-        /* Walk the stack */
-        for (; lua_type(L, stack_index) == LUA_TSTRING; stack_index += 2, num_fields++) {
-            if (num_fields == max_fields) {
-                free_change(L, change);
-
-                return luaL_error(
-                    L,
-                    "too many fields, maximum is %d",
-                    (int)(sizeof(change->delta_values) / sizeof(change->delta_values[0]))
-                );
-            }
-
-            size_t name_length;
-            char const* const field_name = lua_tolstring(L, stack_index, &name_length);
-
-            if (name_length > end - aux - 2) {
-                /* Not enough space in field_names for the new field */
-                free_change(L, change);
-
-                return luaL_error(
-                    L,
-                    "field names do not fit in %d characters",
-                    (int)sizeof(change->field_names)
-                );
-            }
-
-            /* Copy the field name */
-            strcpy(aux, field_name);
-            aux += name_length + 1;
-
-            /* Get the initial field value from the object */
-            lua_getfield(L, 1, field_name);
-
-            if (!lua_isnumber(L, -1)) {
-                free_change(L, change);
-                return luaL_error(L, "field \"%s\" is not a number", field_name);
-            }
-
-            change->initial_values[num_fields] = lua_tonumber(L, -1);
-            lua_pop(L, 1);
-
-            /* Get the target value from the next stack index */
-            if (!lua_isnumber(L, stack_index + 1)) {
-                free_change(L, change);
-                return luaL_error(L, "target value for field \"%s\" is not a number", field_name);
-            }
-
-            lua_Number by = lua_tonumber(L, stack_index + 1);
-
-            if (to) {
-                /**
-                 * If the target value is absolute, evaluate the change amount
-                 */
-                by -= change->initial_values[num_fields];
-            }
-
-            change->delta_values[num_fields] = by;
-        }
-
-        *aux = 0;
-    }
-
-    /* After the <name, value> pairs comes the change duration in seconds */
+    /* Check the change duration */
     if (!lua_isnumber(L, stack_index)) {
-        free_change(L, change);
+        free_change(L, index);
         return luaL_error(L, "duration is not a number");
     }
 
@@ -458,82 +375,111 @@ static int create(lua_State* const L, int const to) {
 
     /* Evaluate the flags */
     {
-        lua_Integer flags = 0;
-
-        if (lua_isnumber(L, stack_index)) {
-            flags = lua_tointeger(L, stack_index++);
+        if (!lua_isinteger(L, stack_index)) {
+            free_change(L, index);
+            return luaL_error(L, "flags is not an integer");
         }
 
+        lua_Integer const flags = lua_tointeger(L, stack_index++);
         lua_Integer const ease = (flags >> 16) & 0xff;
 
         if (ease < 0 || ease >= sizeof(s_ease_funcs) / sizeof(s_ease_funcs[0])) {
-            free_change(L, change);
+            free_change(L, index);
             return luaL_error(L, "invalid ease function %d", (int)ease);
         }
 
-        change->u.ease_func = s_ease_funcs[ease];
+        change->ease_func = s_ease_funcs[ease];
         change->state = flags;
         change->state |= flags & FLAG_PAUSED ? STATE_PAUSED : STATE_RUNNING;
     }
 
-    /* Check if there's a callback function to call when the change ends */
-    if (lua_isfunction(L, stack_index)) {
-        lua_pushvalue(L, stack_index++);
-        change->callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    }
-    else {
-        change->callback_ref = LUA_NOREF;
+    /* Iterate over pairs of <initial value, target value> */
+    {
+        /* Keep track of the number of value pairs since there's a limit */
+        size_t num_values = 0;
+        size_t const max_fields = sizeof(change->delta_values) / sizeof(change->delta_values[0]);
+
+        /* Walk the stack */
+        for (;; num_values++) {
+            if (!lua_isnumber(L, stack_index) || !lua_isnumber(L, stack_index + 1)) {
+                /* No more pairs of values */
+                break;
+            }
+
+            if (num_values == max_fields) {
+                free_change(L, index);
+                return luaL_error(L, "too many <initial, target> value pairs, maximum is %d", CHANGEME_MAX_PAIRS);
+            }
+
+            change->initial_values[num_values] = lua_tonumber(L, stack_index++);
+            lua_Number by = lua_tonumber(L, stack_index++);
+
+            if (to) {
+                /**
+                 * If the target value is absolute, evaluate the change amount
+                 */
+                by -= change->initial_values[num_values];
+            }
+
+            change->delta_values[num_values] = by;
+        }
+
+        change->u.num_values = num_values;
     }
 
+    /* Get the callback function to call when the change ends */
+    lua_pushvalue(L, stack_index++);
+    change->callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
     /* Create and initialize the userdata object */
-    Userdata* const ud = (Userdata*)lua_newuserdata(L, sizeof(*ud));
-    ud->change_index = change - s_changes;
+    Userdata* const ud = lua_newuserdata(L, sizeof(*ud));
+    ud->change_index = index;
     ud->change_tag = change->tag;
 
     /* Set the userdata's metatable */
     if (luaL_newmetatable(L, "change")) {
         static const luaL_Reg methods[] = {
-            {"start",  start},
-            {"kill",   kill},
-            {"status", status},
+            {"start",  l_start},
+            {"kill",   l_kill},
+            {"status", l_status},
             {NULL,     NULL}
         };
 
         luaL_newlib(L, methods);
         lua_setfield(L, -2, "__index");
-
-        lua_pushcfunction(L, gc);
+        
+        lua_pushcfunction(L, l_gc);
         lua_setfield(L, -2, "__gc");
 
-        lua_pushcfunction(L, tostring);
+        lua_pushcfunction(L, l_tostring);
         lua_setfield(L, -2, "__tostring");
     }
 
     lua_setmetatable(L, -2);
 
     /* Make a reference to the object to change */
-    lua_pushvalue(L, 1);
-    change->table_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    lua_pushvalue(L, -1);
+    change->my_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
     change->elapsed_time = 0;
     return 1;
 }
 
 /* Create a change with absolute target values */
-static int to(lua_State* const L) {
-    return create(L, 1);
+static int l_to(lua_State* const L) {
+    return create_change(L, 1);
 }
 
 /* Create a change with relative target values */
-static int by(lua_State* const L) {
-    return create(L, 0);
+static int l_by(lua_State* const L) {
+    return create_change(L, 0);
 }
 
 /**
  * Update active changes, must be called regularly with the elapsed time since
  * the last call
  */
-static int update(lua_State* const L) {
+static int l_update(lua_State* const L) {
     lua_Number const dt = luaL_checknumber(L, 1);
 
     size_t i;
@@ -550,49 +496,40 @@ static int update(lua_State* const L) {
         change->elapsed_time += dt;
         int const finished = change->elapsed_time >= change->duration;
 
-        if (!finished && (change->state & FLAG_AFTER)) {
+        if (!finished && (change->state & FLAG_FINISHED)) {
             /* Changes with this flag only update when they finish */
             continue;
         }
 
         /* Apply the ease function */
         lua_Number const in = finished ? 1 : change->elapsed_time / change->duration;
-        lua_Number const out = change->u.ease_func(in);
+        lua_Number const out = change->ease_func(in);
 
         /* Update the fields in the object */
-        unsigned field = 0;
-        char const* aux = change->field_names;
-        lua_rawgeti(L, LUA_REGISTRYINDEX, change->table_ref);
+        lua_rawgeti(L, LUA_REGISTRYINDEX, change->callback_ref);
+        lua_rawgeti(L, LUA_REGISTRYINDEX, change->my_ref);
 
-        /* While there are names in field_names... */
-        while (*aux != 0) {
-            /* Evaluate the updated field value */
-            lua_Number const current = change->initial_values[field] +
-                                       change->delta_values[field] * out;
+        size_t const num_values = change->u.num_values;
 
-            /* Set it in the object */
+        for (size_t i = 0; i < num_values; i++) {
+            lua_Number const current = change->initial_values[i] +
+                                       change->delta_values[i] * out;
+
             lua_pushnumber(L, current);
-            lua_setfield(L, -2, aux);
-
-            field++;
-            aux += strlen(aux) + 1;
         }
 
-        lua_pop(L, 1);
+        lua_call(L, (int)num_values + 1, 0);
 
-        /* Call the callback and free the change if it's finished */
+        // s_changes may have been reallocated here during the callback execution
+        Change* const change2 = s_changes + i;
+
+        /* Repeat the change, or free it if it's finished */
         if (finished) {
-            if (change->callback_ref != LUA_NOREF) {
-                lua_rawgeti(L, LUA_REGISTRYINDEX, change->callback_ref);
-                lua_rawgeti(L, LUA_REGISTRYINDEX, change->table_ref);
-                lua_call(L, 1, 0);
-            }
-
-            if (change->state & FLAG_REPEAT) {
-                change->elapsed_time -= change->duration;
+            if (change2->state & FLAG_REPEAT) {
+                change2->elapsed_time -= change2->duration;
             }
             else {
-                free_change(L, change);
+                free_change(L, i);
             }
         }
     }
@@ -602,9 +539,9 @@ static int update(lua_State* const L) {
 
 LUALIB_API int luaopen_changeme(lua_State* const L) {
     static const luaL_Reg functions[] = {
-        {"to",     to},
-        {"by",     by},
-        {"update", update},
+        {"to",     l_to},
+        {"by",     l_by},
+        {"update", l_update},
         {NULL,     NULL}
     };
 
@@ -645,16 +582,16 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     static struct {char const* const name; lua_Integer const value;} const constants[] = {
         {"PAUSED", FLAG_PAUSED},
         {"REPEAT", FLAG_REPEAT},
-        {"AFTER", FLAG_AFTER}
+        {"FINISHED", FLAG_FINISHED}
     };
 
     static struct {char const* const name; char const* const value;} const info[] = {
         {"_COPYRIGHT", "Copyright (c) 2020 Andre Leiradella"},
         {"_LICENSE", "MIT"},
-        {"_VERSION", "1.2.2"},
+        {"_VERSION", "2.0.0"},
         {"_NAME", "changeme"},
         {"_URL", "https://github.com/leiradel/luamods/changeme"},
-        {"_DESCRIPTION", "A simple module to change table fields over time"}
+        {"_DESCRIPTION", "A simple module to interpolate values over time"}
     };
 
     size_t const functions_count = sizeof(functions) / sizeof(functions[0]) - 1;
