@@ -1,4 +1,5 @@
 ddlt/src/boot_lua.h
+.vscode/
 
 # Prerequisites
 *.d
