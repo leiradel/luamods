@@ -1,6 +1,6 @@
 # changeme
 
-**changeme** is a little Lua module to make it easy to change fields in tables over time, using different easing functions.
+**changeme** is a little Lua module to make it easy to interpolate values over time, using different easing functions.
 
 ## Building
 
@@ -12,36 +12,34 @@ $ gcc -std=c99 -O2 -Werror -Wall -Wpedantic -shared -fPIC -o changeme.so changem
 
 The following macros can be defined to configure the module:
 
-* `CHANGEME_FIELD_NAMES_SIZE` (default 24): the maximum number of characters the field names can occupy in a change (each field name occupy it's name length plus 1 NUL character; there's an additional NUL character at the end of all field names)
-* `CHANGEME_MAX_FIELDS` (default 4): the maximum number of fields that a change can, hm, change
+* `CHANGEME_MAX_PAIRS` (default 4): The maximum number of `<start, target>` value pairs that one change can interpolate.
 * `CHANGEME_INITIAL_ARRAY_SIZE` (default 32): the number of changes that will be reserved when the first change is created
 
-While the limits above feel not very Lua-ish, they exist to keep the module simple and fast. If you do really need to change 16 fields simultaneously, either change the above limits or create as many changes as necessary to accommodate all of them given the configured limits.
+While the limits above feel not very Lua-ish, they exist to keep the module simple and fast. If you do really need to change 16 values simultaneously, either change the above limits or create as many changes as necessary to accommodate all of them given the configured limits.
 
 ## Usage
 
 ### `changeme.to`
 
-`changeme.to` creates a change that will modify fields to an absolute value. Changes are only freed when they finish, so it's not necessary to keep them in variables to prevent them from dying a premature death.
+`changeme.to` creates a change that interpolate values to a target absolute value.
 
 ```lua
 changeme.to(
-    table,                    -- The table that will have its fields changed.
+    duration,                    -- Duration of the change, can be in any unit
+                                 -- as long as it is used consistently.
 
-    field_name, target_value, -- Field name as a string and its target value,
-                              -- this pair can be repeated to change two or
-                              -- more fields in the same change.
+    flags,                       -- The flags for the change and easing function
+                                 -- to use (see below).
 
-    duration,                 -- Duration of the change, can be in any unit as
-                              -- long as it is used consistently.
+    initial_value, target_value, -- 0 or more pairs of initial and target values
+                                 -- that will be updated by the change, up to
+                                 -- CHANGEME_MAX_PAIRS.
 
-    flags,                    -- The flags for the change (see below), this
-                              -- argument is optional and defaults to zero.
-
-    callback                  -- A function that will be called when the change
-                              -- ends, it will be called with the table as its
-                              -- only parameter. The function is called even if
-                              -- the change is configured to repeat.
+    callback                     -- A function that will be called when the
+                                 -- change ends. It's' called with the change
+                                 -- itself as the first parameter, and the
+                                 -- current interpolated values of each of the
+                                 -- value pairs.
 )
 ```
 
@@ -49,7 +47,7 @@ After the duration it's possible to specify the following flags:
 
 * `PAUSED`: the change will only begin after an explicitly call to `:start()` method
 * `REPEAT`: the change will repeat when it finishes
-* `AFTER`: the change will only update the fields at the end of the duration period
+* `FINISHED`: the change will only update the fields at the end of the duration period
 
 The available easing functions are:
 
@@ -69,58 +67,58 @@ The available easing functions are:
 
 It's possible to see how these functions map the input to output values [here](https://easings.net/en).
 
+A changes is freed when:
+
+1. There are no more references to it in Lua **and** it is paused.
+1. It has finished and wasn't set to repeat.
+1. It is explicitly killed.
+
+Running changes are never freed, even if there are no more references to it in Lua. When they finish, they'll be automatically freed. That means you don't have to keep a reference to a running change to keep it alive, and it also means that changes set to repeat will never be freed, unless they're explicitly killed.
+
 Example:
 
 ```lua
 local changeme = require 'changeme'
-local t = {x = 0, y = 100}
+local x, y = 0, 100
 
--- Change t.x from 0 (set above) to 100 and t.y from 100
--- (set above) to 0, linearly in 5 seconds. It's not necessary
--- to keep a reference to the change, it'll persist until
--- it finishes.
-changeme.to(t, 'x', 100, 'y', 0, 5)
+-- Change x from 0 (set above) to 100 and y from 100 (set above) to 0, linearly
+-- in 5 time units. It's not necessary to keep a reference to the change, it'll
+-- persist until it finishes.
+changeme.to(5, changeme.LINEAR, x, 100, y, 0, function(change, ix, iy)
+    x, y = ix, iy
+end)
 
-while t.x < 100 do
-    changeme.update(0.1) -- 1/10 of a second has passed
-    print(1, t.x, t.y)
+while x < 100 do
+    changeme.update(0.1) -- 1/10 of a time unit has passed
+    print(1, x, y)
 end
 
--- Change t.x back to 0 using a cubic interpolation. The
--- change will start paused.
-local x = changeme.to(t, 'x', 0, 5, changeme.CUBIC_IN + changeme.PAUSED)
+-- Change x back to 0 using a cubic interpolation. The change will start paused.
+local c = changeme.to(5, changeme.CUBIC_IN + changeme.PAUSED, x, 0, function(change, ix)
+    x = ix
+end)
 
 for i = 1, 5 do
     changeme.update(0.1) -- the fields will not be updated
-    print(2, t.x, t.y, x:status())
+    print(2, x, y, c:status())
 end
 
-x:start() -- start the change
+c:start() -- start the change
 
-while t.x > 0 do
+while x > 0 do
     changeme.update(0.1)
-    print(3, t.x, t.y, x:status())
+    print(3, x, y, c:status())
 end
 
--- Change t.y to 100 abruptly after 2 seconds, and call a
--- function when it finishes.
-changeme.to(t, 'y', 100, 2, changeme.AFTER, function(t)
-    print('now t.y is 100')
+-- Change y to 100 abruptly after 2 seconds.
+changeme.to(2, changeme.AFTER, y, 100, function(change, iy)
+    y = iy
+    print('now y is 100')
 end)
 
-while t.y ~= 100 do
+while y ~= 100 do
     changeme.update(0.1)
-    print(4, t.x, t.y)
-end
-
-local t = {angle = 0}
-
--- Will keep t.angle spinning forever.
-changeme.by(t, 'angle', 2 * math.pi, 2, changeme.REPEAT)
-
-for i = 1, 100 do
-    changeme.update(0.1) -- the fields will not be updated
-    print(5, t.angle)
+    print(4, x, y)
 end
 ```
 
@@ -130,10 +128,17 @@ end
 
 ```lua
 local changeme = require 'changeme'
-local t = {angle = 0}
+local angle = 0
 
--- Will keep t.angle spinning forever.
-changeme.by(t, 'angle', 2 * math.pi, 2, changeme.REPEAT)
+-- Will keep angle spinning forever, completing 360 degrees each two seconds.
+changeme.by(2, 2 * math.pi, changeme.REPEAT, function(change, iangle)
+    angle = iangle
+end)
+
+for i = 1, 100 do
+    changeme.update(0.1)
+    print(5, angle)
+end
 ```
 
 ### `changeme.update`
@@ -158,6 +163,9 @@ The `status` method will return a string with the status of the change. The name
 
 ## Changelog
 
+* 2.0.0
+  * Changes don't actuate on tables anymore, but interpolate explicit values
+  * The callback function is mandatory, and receive the change itself followed by the interpolated values
 * 1.2.2
   * Fixes to compile with C99
 * 1.2.1
