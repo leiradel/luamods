@@ -3,7 +3,7 @@
 A collection of small Lua modules.
 
 * [access](access): Creates constant and sealed tables, and records.
-* [changeme](changeme): Makes it easy to change fields in tables over time, using different easing functions.
+* [changeme](changeme): Makes it easy to interpolate values over time, using different easing functions.
 * [ddlt](ddlt): A generic lexer to help write parsers, able to recognize C++, BASIC, and Pascal tokens.
 * [imgcreate](imgcreate): Creates PNG, BMP, TGA, and JPEG images from pixels.
 * [inifile](inifile): Reads entries from a INI file.
