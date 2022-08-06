@@ -523,6 +523,11 @@ static int l_update(lua_State* const L) {
         // s_changes may have been reallocated here during the callback execution
         Change* const change2 = s_changes + i;
 
+        // Check if the change hasn't been killed in the callback
+        if ((change2->state & STATE_MASK) == STATE_UNUSED) {
+            continue;
+        }
+
         /* Repeat the change, or free it if it's finished */
         if (finished) {
             if (change2->state & FLAG_REPEAT) {
