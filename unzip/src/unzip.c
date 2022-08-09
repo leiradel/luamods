@@ -118,6 +118,51 @@ static int l_read(lua_State* const L) {
     return 0;
 }
 
+static int l_enumerate(lua_State* const L) {
+    Unzip* const self = check(L, 1);
+
+    if (unzGoToFirstFile(self->file) != UNZ_OK) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "error locating the first file in the archive");
+        return 2;
+    }
+
+    for (;;) {
+        unz_file_info info;
+        char filename[256];
+
+        int const res1 = unzGetCurrentFileInfo(self->file, &info, filename, sizeof(filename), NULL, 0, NULL, 0);
+
+        if (res1 != UNZ_OK) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "error getting information about file in the archive");
+            return 2;
+        }
+
+        lua_pushvalue(L, 2);
+        lua_pushstring(L, filename);
+        lua_pushinteger(L, info.compressed_size);
+        lua_pushinteger(L, info.uncompressed_size);
+        lua_pushinteger(L, info.crc);
+
+        lua_call(L, 4, 0);
+
+        int const res2 = unzGoToNextFile(self->file);
+
+        if (res2 == UNZ_END_OF_LIST_OF_FILE) {
+            break;
+        }
+
+        if (res2 != UNZ_OK) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "error locating the next file in the archive");
+            return 2;
+        }
+    }
+
+    return 0;
+}
+
 static int l_gc(lua_State* const L) {
     Unzip* const self = (Unzip*)lua_touserdata(L, 1);
     unzClose(self->file);
@@ -267,6 +312,7 @@ static int l_init(lua_State* const L) {
         static const luaL_Reg methods[] = {
             {"exists", l_exists},
             {"read", l_read},
+            {"enumerate", l_enumerate},
             {NULL, NULL}
         };
 
