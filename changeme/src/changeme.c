@@ -120,7 +120,7 @@ typedef struct {
 
     /**
      * The reference to a callback function that will be called when the
-     * change finished, if provided
+     * change finished
      */
     int callback_ref;
 }
