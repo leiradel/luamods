@@ -10,4 +10,5 @@ A collection of small Lua modules.
 * [luaio](luaio): Allows the native implementation of streams that mimic Lua IO streams.
 * [proxyud](proxyud): Creates a full userdata object, optionally setting a metatable to it. It's purpose is to be used as a proxy to another Lua object.
 * [unzip](unzip): Uncompresses entries in ZIP files.
+* [xml](xml): A simple XML parser implemented in Lua.
 * [z80](z80): Bindings for Andre Weissflog's [Z80 CPU emulator](https://github.com/floooh/chips/blob/master/chips/z80.h).
