@@ -23,6 +23,32 @@ unzip.init(
 )
 ```
 
+### `:exists()`
+
+The `exists` methods will return `true` if the informed path exists in the ZIP archive, or `false` otherwise. The check is case-sensitive.
+
+```lua
+zip:exists(
+    path, -- The path to the file inside the archive.
+)
+```
+
+Example:
+
+```lua
+local unzip = require 'unzip'
+
+local file = assert(io.open('game.jar', 'rb'))
+local zip = assert(unzip.init(file))
+
+-- Only print the manifest if it exists
+if zip:exists('MANIFEST') then
+    zip:read('MANIFEST', io.stdout) -- or print(zip:read('MANIFEST'))
+end
+
+file:close()
+```
+
 ### `:read()`
 
 The `read` method reads entries from an open ZIP archive. Reading from an entry that represents a folder returns an empty string.
