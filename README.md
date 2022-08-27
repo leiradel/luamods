@@ -3,7 +3,9 @@
 A collection of small Lua modules.
 
 * [access](access): Creates constant and sealed tables, and records.
+* [buffer](buffer): Creates a read-only binary array from a string, and allows reads of data types from it.
 * [changeme](changeme): Makes it easy to interpolate values over time, using different easing functions.
+* [crc64](crc64): Computes the CRC-64 of strings using the ECMA-182 standard.
 * [ddlt](ddlt): A generic lexer to help write parsers, able to recognize C++, BASIC, and Pascal tokens.
 * [imgcreate](imgcreate): Creates PNG, BMP, TGA, and JPEG images from pixels.
 * [inifile](inifile): Reads entries from a INI file.
