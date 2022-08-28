@@ -139,13 +139,21 @@ static int l_enumerate(lua_State* const L) {
             return 2;
         }
 
+        int const before = lua_gettop(L);
+
         lua_pushvalue(L, 2);
         lua_pushstring(L, filename);
         lua_pushinteger(L, info.compressed_size);
         lua_pushinteger(L, info.uncompressed_size);
         lua_pushinteger(L, info.crc);
 
-        lua_call(L, 4, 0);
+        lua_call(L, 4, LUA_MULTRET);
+
+        int const after = lua_gettop(L);
+
+        if (after != before) {
+            return after - before;
+        }
 
         int const res2 = unzGoToNextFile(self->file);
 
