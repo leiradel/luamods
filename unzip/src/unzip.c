@@ -171,10 +171,15 @@ static int l_enumerate(lua_State* const L) {
     return 0;
 }
 
-static int l_gc(lua_State* const L) {
+static int l_close(lua_State* const L) {
     Unzip* const self = (Unzip*)lua_touserdata(L, 1);
-    unzClose(self->file);
-    luaL_unref(L, LUA_REGISTRYINDEX, self->object_ref);
+
+    if (self->file != NULL) {
+        unzClose(self->file);
+        luaL_unref(L, LUA_REGISTRYINDEX, self->object_ref);
+        self->file = NULL;
+    }
+
     return 0;
 }
 
@@ -321,13 +326,14 @@ static int l_init(lua_State* const L) {
             {"exists", l_exists},
             {"read", l_read},
             {"enumerate", l_enumerate},
+            {"close", l_close},
             {NULL, NULL}
         };
 
         luaL_newlib(L, methods);
         lua_setfield(L, -2, "__index");
 
-        lua_pushcfunction(L, l_gc);
+        lua_pushcfunction(L, l_close);
         lua_setfield(L, -2, "__gc");
     }
 
