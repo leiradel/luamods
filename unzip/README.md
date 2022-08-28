@@ -23,6 +23,10 @@ unzip.init(
 )
 ```
 
+### `:close()`
+
+Closes the ZIP archive, no other operations will be performed on the underlying file object which will be left opened.
+
 ### `:exists()`
 
 The `exists` methods will return `true` if the informed path exists in the ZIP archive, or `false` otherwise. The check is case-sensitive.
@@ -46,6 +50,7 @@ if zip:exists('MANIFEST') then
     zip:read('MANIFEST', io.stdout) -- or print(zip:read('MANIFEST'))
 end
 
+zip:close()
 file:close()
 ```
 
@@ -72,6 +77,7 @@ local zip = assert(unzip.init(file))
 
 zip:read('MANIFEST', io.stdout) -- or print(zip:read('MANIFEST'))
 
+zip:close()
 file:close()
 ```
 
@@ -108,6 +114,7 @@ zip:enumerate(function(filename, compressedSize, uncompressedSize, crc32)
     print(filename, compressedSize, uncompressedSize, crc32)
 end)
 
+zip:close()
 file:close()
 ```
 
