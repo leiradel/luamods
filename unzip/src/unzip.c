@@ -39,7 +39,7 @@ static void l_push_string_writer(lua_State* const L) {
         "        return self\n"
         "    end,\n"
         "    result = function(self)\n"
-        "        return table.concat(self.chunks,'')\n"
+        "        return table.concat(self.chunks, '')\n"
         "    end\n"
         "}\n"
     );
