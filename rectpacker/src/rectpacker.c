@@ -62,12 +62,23 @@ static int l_getrects(lua_State* const L) {
         return 2;
     }
 
-    lua_pushboolean(L, self->rects[ndx].was_packed != 0);
-    lua_pushinteger(L, self->rects[ndx].x);
-    lua_pushinteger(L, self->rects[ndx].y);
-    lua_pushinteger(L, self->rects[ndx].w);
-    lua_pushinteger(L, self->rects[ndx].h);
-    lua_pushinteger(L, self->rects[ndx].id);
+    if (self->rects[ndx].was_packed != 0) {
+        lua_pushboolean(L, 1);
+        lua_pushinteger(L, self->rects[ndx].x);
+        lua_pushinteger(L, self->rects[ndx].y);
+        lua_pushinteger(L, self->rects[ndx].w);
+        lua_pushinteger(L, self->rects[ndx].h);
+        lua_pushinteger(L, self->rects[ndx].id);
+    }
+    else {
+        lua_pushboolean(L, 0);
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushinteger(L, self->rects[ndx].w);
+        lua_pushinteger(L, self->rects[ndx].h);
+        lua_pushinteger(L, self->rects[ndx].id);
+    }
+
     return 6;
 }
 
