@@ -68,6 +68,8 @@ Rectangles can only be added at the end of the array. In addition to the width a
 
 The array of rectangles is nice to enable efficient packing of atlases built in runtime, where new images can keep being added to the atlas until it's full.
 
+If an initial capacity is not provided, the array will be allocated with 16 elements when the first rectangle is inserted.
+
 ```lua
 rectpacker.newRects(
     initial_capacity -- The initial capacity of the array. The array will be
@@ -94,8 +96,8 @@ rects:append(
 Returns information about the rectangle at the given 1-based index. It returns the the following six values:
 
 1. `true` if that particular rectangle was packed, or `false` if it wasn't
-1. The **x** coordinate of the top-left corner of the rectangle.
-1. The **y** coordinate of the top-left corner of the rectangle.
+1. The **x** coordinate of the top-left corner of the rectangle, or `nil` if the rectangle wasn't packed.
+1. The **y** coordinate of the top-left corner of the rectangle, or `nil` if the rectangle wasn't packed.
 1. The **width** of the rectangle.
 1. The **height** of the rectangle.
 1. The **id** of the rectangle.
@@ -138,16 +140,16 @@ rects:append(192, 128, 3)
 rects:append( 64,  64, 4)
 rects:append( 64,  64, 5)
 
-print(#rects) -- prints 5
+print(#rects, rects) -- prints 5	Rects(5/16)
 
 --[[
 The loop below will print the following:
 
-1	false	2147483647	2147483647	128	128	1
-2	false	2147483647	2147483647	128	128	2
-3	false	2147483647	2147483647	192	128	3
-4	false	2147483647	2147483647	64	64	4
-5	false	2147483647	2147483647	64	64	5
+1	false	nil	nil	128	128	1
+2	false	nil	nil	128	128	2
+3	false	nil	nil	192	128	3
+4	false	nil	nil	64	64	4
+5	false	nil	nil	64	64	5
 ]]
 for i = 1, #rects do
     print(i, rects:get(i)) -- prints i false 0 0 width height id
@@ -167,14 +169,17 @@ The loop below will print the following:
 1	true	0	128	128	128	1
 2	true	128	128	128	128	2
 3	true	0	0	192	128	3
-4	false	2147483647	2147483647	64	64	4
-5	false	2147483647	2147483647	64	64	5
+4	false	nil	nil	64	64	4
+5	false	nil	nil	64	64	5
 
 Notice the invalid coordinates for the rectangles that weren't packed.
 ]]
 for i = 1, #rects do
     print(i, rects:get(i))
 end
+
+rects:reset()
+print(#rects, rects) -- prints 0	Rects(0/16)
 ```
 
 ## Changelog
