@@ -58,7 +58,7 @@ static int l_getrects(lua_State* const L) {
 
     if (ndx < 0 || ndx >= self->count) {
         lua_pushnil(L);
-        lua_pushfstring(L, "invalid index %I into the array, count is %zu", ndx + 1, self->count);
+        lua_pushfstring(L, "invalid index %I into the array, count is %I", ndx + 1, (lua_Integer)self->count);
         return 2;
     }
 
@@ -85,7 +85,7 @@ static int l_lenrects(lua_State* const L) {
 
 static int l_tostringrects(lua_State* const L) {
     Rects* const self = checkrects(L, 1);
-    lua_pushfstring(L, RECTS_MT "(%zu/%zu)", self->count, self->allocated);
+    lua_pushfstring(L, RECTS_MT "(%I/%I)", (lua_Integer)self->count, (lua_Integer)self->allocated);
     return 1;
 }
 
