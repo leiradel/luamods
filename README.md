@@ -11,6 +11,7 @@ A collection of small Lua modules.
 * [inifile](inifile): Reads entries from a INI file.
 * [luaio](luaio): Allows the native implementation of streams that mimic Lua IO streams.
 * [proxyud](proxyud): Creates a full userdata object, optionally setting a metatable to it. It's purpose is to be used as a proxy to another Lua object.
+* [rectpacker](rectpacker): A Lua binding for [Sean Barrett](https://github.com/nothings)'s [2D rectangle packer](https://github.com/nothings/stb/blob/master/stb_rect_pack.h).
 * [unzip](unzip): Uncompresses entries in ZIP files.
 * [xml](xml): A simple XML parser implemented in Lua.
 * [z80](z80): Bindings for Andre Weissflog's [Z80 CPU emulator](https://github.com/floooh/chips/blob/master/chips/z80.h).
