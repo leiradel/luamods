@@ -10,7 +10,7 @@ It's just one file, either add it to your project or build a loadable Lua module
 $ gcc -std=c99 -O2 -Werror -Wall -Wpedantic -shared -fPIC -o http.so http.c
 ```
 
-> On Linux, **http** requires `lincurl` to build.
+> **http** requires `lincurl` to build.
 
 ## Usage
 
