@@ -68,6 +68,13 @@ local function load(path)
 end
 
 return {
+    _COPYRIGHT = 'Copyright (c) 2021-2022 Andre Leiradella',
+    _LICENSE = 'MIT',
+    _VERSION = '1.0.1',
+    _NAME = 'inifile',
+    _URL = 'https://github.com/leiradel/luamods/inifile',
+    _DESCRIPTION = 'Reads entries from a INI file',
+
     iterate = iterate,
     load = load
 }

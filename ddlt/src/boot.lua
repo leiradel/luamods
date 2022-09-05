@@ -56,7 +56,7 @@ return function(ddlt)
         end
     end
 
-    ddlt._COPYRIGHT = 'Copyright (C) 2017-2021 Andre Leiradella'
+    ddlt._COPYRIGHT = 'Copyright (C) 2017-2022 Andre Leiradella'
     ddlt._LICENSE = 'MIT'
     ddlt._VERSION = '5.0.1'
     ddlt._NAME = 'ddlt'

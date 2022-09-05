@@ -42,7 +42,7 @@ LUAMOD_API int luaopen_proxyud(lua_State* L) {
     };
 
     static struct {char const* const name; char const* const value;} const info[] = {
-        {"_COPYRIGHT", "Copyright (c) 2020 Andre Leiradella"},
+        {"_COPYRIGHT", "Copyright (c) 2020-2022 Andre Leiradella"},
         {"_LICENSE", "MIT"},
         {"_VERSION", "1.0.0"},
         {"_NAME", "proxyud"},

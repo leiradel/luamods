@@ -120,10 +120,10 @@ end
 
 -- The module.
 return const {
-    _COPYRIGHT = 'Copyright (c) 2021 Andre Leiradella',
+    _COPYRIGHT = 'Copyright (c) 2021-2022 Andre Leiradella',
     _LICENSE = 'MIT',
     _VERSION = '1.2.0',
-    _NAME = 'proxyud',
+    _NAME = 'access',
     _URL = 'https://github.com/leiradel/luamods/access',
     _DESCRIPTION = 'Creates constant and sealed objects',
 

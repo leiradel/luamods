@@ -49,6 +49,13 @@ local function collect(s)
 end
 
 return {
+    _COPYRIGHT = 'Copyright (c) 2022 Andre Leiradella',
+    _LICENSE = 'MIT',
+    _VERSION = '1.0.0',
+    _NAME = 'xml',
+    _URL = 'https://github.com/leiradel/luamods/xml',
+    _DESCRIPTION = 'A simple XML parser implemented in Lua',
+
     parse = function(xml)
         local root = collect(xml)
         return root[1]
