@@ -7,6 +7,7 @@ A collection of small Lua modules.
 * [changeme](changeme): Makes it easy to interpolate values over time, using different easing functions.
 * [crc64](crc64): Computes the CRC-64 of strings using the ECMA-182 standard.
 * [ddlt](ddlt): A generic lexer to help write parsers, able to recognize C++, BASIC, and Pascal tokens.
+* [http](http): A module that performs non-blocking HTTP requests.
 * [imgcreate](imgcreate): Creates PNG, BMP, TGA, and JPEG images from pixels.
 * [inifile](inifile): Reads entries from a INI file.
 * [luaio](luaio): Allows the native implementation of streams that mimic Lua IO streams.
