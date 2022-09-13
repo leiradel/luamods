@@ -110,7 +110,7 @@ typedef struct {
     u;
 
     /* In what state this change is, and its flags */
-    unsigned state;
+    uint32_t state;
 
     /* The change tag to differentiate living and dead changes apart */
     unsigned tag;
