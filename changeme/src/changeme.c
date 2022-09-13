@@ -254,7 +254,7 @@ static void free_change(lua_State* const L, size_t const index) {
 
 /* Checks for a valid change in the Lua stack */
 static size_t check_change(lua_State* const L, int ndx) {
-    Userdata const* const ud = (Userdata*)luaL_checkudata(L, 1, CHANGE_MT);
+    Userdata const* const ud = (Userdata*)luaL_checkudata(L, ndx, CHANGE_MT);
 
     /* A change is only valid if its tag matches the one from the reference */
     if (s_changes[ud->change_index].tag == ud->change_tag) {
