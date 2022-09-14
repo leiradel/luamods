@@ -381,9 +381,9 @@ static int create_change(lua_State* const L, int const to) {
         }
 
         lua_Integer const flags = lua_tointeger(L, stack_index++);
-        lua_Integer const ease = (flags >> 16) & 0xff;
+        size_t const ease = (size_t)((flags >> 16) & 0xff);
 
-        if (ease < 0 || ease >= sizeof(s_ease_funcs) / sizeof(s_ease_funcs[0])) {
+        if (ease >= sizeof(s_ease_funcs) / sizeof(s_ease_funcs[0])) {
             free_change(L, index);
             return luaL_error(L, "invalid ease function %d", (int)ease);
         }
@@ -408,7 +408,7 @@ static int create_change(lua_State* const L, int const to) {
 
             if (num_values == max_fields) {
                 free_change(L, index);
-                return luaL_error(L, "too many <initial, target> value pairs, maximum is %d", CHANGEME_MAX_PAIRS);
+                return luaL_error(L, "too many <initial, target> value pairs, maximum is %zu", max_fields);
             }
 
             change->initial_values[num_values] = lua_tonumber(L, stack_index++);
