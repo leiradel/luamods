@@ -354,6 +354,41 @@ static int l_tostring(lua_State* const L) {
     return 1;
 }
 
+/* Pushes a change onto the Lua stack */
+static int push_change(lua_State* const L, Change* const change) {
+    /* Create and initialize the userdata object */
+    Userdata* const ud = lua_newuserdata(L, sizeof(*ud));
+    ud->change_index = change - s_changes;
+    ud->change_tag = change->tag;
+
+    /* Set the userdata's metatable */
+    if (luaL_newmetatable(L, "change")) {
+        static const luaL_Reg methods[] = {
+            {"start",  l_start},
+            {"kill",   l_kill},
+            {"status", l_status},
+            {NULL,     NULL}
+        };
+
+        luaL_newlib(L, methods);
+        lua_setfield(L, -2, "__index");
+        
+        lua_pushcfunction(L, l_gc);
+        lua_setfield(L, -2, "__gc");
+
+        lua_pushcfunction(L, l_tostring);
+        lua_setfield(L, -2, "__tostring");
+    }
+
+    lua_setmetatable(L, -2);
+
+    /* Make a reference to itself */
+    lua_pushvalue(L, -1);
+    change->my_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    return 1;
+}
+
 /* Creates a change, to == 0 means that target values are relative */
 static int create_change(lua_State* const L, int const to) {
     size_t const index = alloc_change();
@@ -431,38 +466,8 @@ static int create_change(lua_State* const L, int const to) {
     lua_pushvalue(L, stack_index++);
     change->callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    /* Create and initialize the userdata object */
-    Userdata* const ud = lua_newuserdata(L, sizeof(*ud));
-    ud->change_index = index;
-    ud->change_tag = change->tag;
-
-    /* Set the userdata's metatable */
-    if (luaL_newmetatable(L, "change")) {
-        static const luaL_Reg methods[] = {
-            {"start",  l_start},
-            {"kill",   l_kill},
-            {"status", l_status},
-            {NULL,     NULL}
-        };
-
-        luaL_newlib(L, methods);
-        lua_setfield(L, -2, "__index");
-        
-        lua_pushcfunction(L, l_gc);
-        lua_setfield(L, -2, "__gc");
-
-        lua_pushcfunction(L, l_tostring);
-        lua_setfield(L, -2, "__tostring");
-    }
-
-    lua_setmetatable(L, -2);
-
-    /* Make a reference to the object to change */
-    lua_pushvalue(L, -1);
-    change->my_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-
     change->elapsed_time = 0;
-    return 1;
+    return push_change(L, change);
 }
 
 /* Create a change with absolute target values */
