@@ -25,7 +25,6 @@ SOFTWARE.
 #include <lua.h>
 #include <lauxlib.h>
 
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -110,7 +109,7 @@ typedef struct {
     u;
 
     /* In what state this change is, and its flags */
-    uint32_t state;
+    State state;
 
     /* The change tag to differentiate living and dead changes apart */
     unsigned tag;
