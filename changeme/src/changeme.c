@@ -195,6 +195,32 @@ static const EaseFunc s_ease_funcs[] = {
     SineEaseInOut,
 };
 
+/* Functions to access the bits of the change's state */
+static int change_type(Change const* const change) {
+    return change->state & TYPE_MASK;
+}
+
+static int change_state(Change const* const change) {
+    return change->state & STATE_MASK;
+}
+
+static void change_newstate(Change* const change, State new_state) {
+    change->state &= ~STATE_MASK;
+    change->state |= new_state & STATE_MASK;
+}
+
+static int change_paused(Change const* const change) {
+    return (change->state & FLAG_PAUSED) != 0;
+}
+
+static int change_repeating(Change const* const change) {
+    return (change->state & FLAG_REPEAT) != 0;
+}
+
+static int change_finished(Change const* const change) {
+    return (change->state & FLAG_FINISHED) != 0;
+}
+
 /* Allocates a new change */
 static size_t alloc_change(void) {
     /* If the free list is not empty... */
@@ -245,6 +271,7 @@ static void free_change(lua_State* const L, size_t const index) {
 
     /* Make sure it won't be processed anymore */
     change->state = STATE_UNUSED;
+    change_newstate(change, STATE_UNUSED);
 
     /* Release the references to the Lua values */
     luaL_unref(L, LUA_REGISTRYINDEX, change->my_ref);
@@ -270,11 +297,9 @@ static int l_start(lua_State* const L) {
     if (index != INVALID_INDEX) {
         Change* const change = s_changes + index;
 
-        if ((change->state & STATE_MASK) == STATE_PAUSED) {
+        if (change_paused(change)) {
             /* Make it run */
-            change->state &= ~STATE_MASK;
-            change->state |= STATE_RUNNING;
-
+            change_newstate(change, STATE_RUNNING);
             return 0;
         }
     }
@@ -301,9 +326,9 @@ static int l_kill(lua_State* const L) {
 /* Returns the status of a change */
 static int l_status(lua_State* const L) {
     size_t const index = check_change(L, 1);
-    unsigned const state = index == INVALID_INDEX ? STATE_UNUSED : s_changes[index].state;
+    unsigned const state = index == INVALID_INDEX ? STATE_UNUSED : change_state(s_changes + index);
 
-    switch (state & STATE_MASK) {
+    switch (state) {
         case STATE_UNUSED: {
             lua_pushliteral(L, "dead");
             return 1;
@@ -329,7 +354,7 @@ static int l_status(lua_State* const L) {
 static int l_gc(lua_State* const L) {
     size_t const index = check_change(L, 1);
 
-    if (index != INVALID_INDEX && (s_changes[index].state & STATE_MASK) == STATE_PAUSED) {
+    if (index != INVALID_INDEX && change_paused(s_changes + index)) {
         /**
          * Only free changes here if they are paused, since there are no
          * references to it left in Lua land and they cannot be started
@@ -492,7 +517,7 @@ static int l_update(lua_State* const L) {
     for (i = 0; i < count; i++) {
         Change* const change = s_changes + i;
 
-        if ((change->state & STATE_MASK) != STATE_RUNNING) {
+        if (change_state(change) != STATE_RUNNING) {
             /* Only process active changes */
             continue;
         }
@@ -500,7 +525,7 @@ static int l_update(lua_State* const L) {
         change->elapsed_time += dt;
         int const finished = change->elapsed_time >= change->duration;
 
-        if (!finished && (change->state & FLAG_FINISHED)) {
+        if (!finished && change_finished(change)) {
             /* Changes with this flag only update when they finish */
             continue;
         }
@@ -528,13 +553,13 @@ static int l_update(lua_State* const L) {
         Change* const change2 = s_changes + i;
 
         // Check if the change hasn't been killed in the callback
-        if ((change2->state & STATE_MASK) == STATE_UNUSED) {
+        if (change_state(change2) == STATE_UNUSED) {
             continue;
         }
 
         /* Repeat the change, or free it if it's finished */
         if (finished) {
-            if (change2->state & FLAG_REPEAT) {
+            if (change_repeating(change2)) {
                 change2->elapsed_time -= change2->duration;
             }
             else {
