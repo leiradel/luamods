@@ -65,6 +65,9 @@ typedef enum {
     /* Mask to get the state */
     STATE_MASK = 3,
 
+    /* Shift to get the state */
+    STATE_SHIFT = 0,
+
     /* Start the change in pause mode */
     FLAG_PAUSED = 1 << 8,
 
@@ -204,12 +207,12 @@ static const EaseFunc s_ease_funcs[] = {
 
 /* Functions to access the bits of the change's state */
 static int change_state(Change const* const change) {
-    return change->state & STATE_MASK;
+    return (change->state >> STATE_SHIFT) & STATE_MASK;
 }
 
 static void change_newstate(Change* const change, State new_state) {
-    change->state &= ~STATE_MASK;
-    change->state |= new_state & STATE_MASK;
+    change->state &= ~(STATE_MASK << STATE_SHIFT);
+    change->state |= (new_state & STATE_MASK) << STATE_SHIFT;
 }
 
 static int change_ispaused(Change const* const change) {
