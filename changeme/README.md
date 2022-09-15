@@ -47,7 +47,7 @@ After the duration it's possible to specify the following flags:
 
 * `PAUSED`: the change will only begin after an explicitly call to `:start()` method
 * `REPEAT`: the change will repeat when it finishes
-* `FINISHED`: the change will only update the fields at the end of the duration period
+* `ALARM`: the change will only update the fields and call the callback at the end of the duration period
 
 The available easing functions are:
 
@@ -111,7 +111,7 @@ while x > 0 do
 end
 
 -- Change y to 100 abruptly after 2 seconds.
-changeme.to(2, changeme.AFTER, y, 100, function(change, iy)
+changeme.to(2, changeme.ALARM, y, 100, function(change, iy)
     y = iy
     print('now y is 100')
 end)
@@ -163,6 +163,9 @@ The `status` method will return a string with the status of the change. The name
 
 ## Changelog
 
+* 3.0.0
+  * Renamed flag `FINISHED` to `ALARM`
+  * Some refactoring in preparation for grouped changes
 * 2.0.0
   * Changes don't actuate on tables anymore, but interpolate explicit values
   * The callback function is mandatory, and receive the change itself followed by the interpolated values
