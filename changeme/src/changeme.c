@@ -196,10 +196,6 @@ static const EaseFunc s_ease_funcs[] = {
 };
 
 /* Functions to access the bits of the change's state */
-static int change_type(Change const* const change) {
-    return change->state & TYPE_MASK;
-}
-
 static int change_state(Change const* const change) {
     return change->state & STATE_MASK;
 }
