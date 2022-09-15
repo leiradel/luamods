@@ -53,20 +53,29 @@ SOFTWARE.
 
 /* States and flags */
 typedef enum {
-    /* Free for use, will not be processed */
-    STATE_UNUSED = 0,
-
-    /* Awaiting for start */
-    STATE_PAUSED = 1,
-
-    /* Active */
-    STATE_RUNNING = 2,
+    /* Shift to get the state */
+    STATE_SHIFT = 0,
 
     /* Mask to get the state */
     STATE_MASK = 3,
 
-    /* Shift to get the state */
-    STATE_SHIFT = 0,
+    /* Free for use, will not be processed */
+    STATE_UNUSED = 0 << STATE_SHIFT,
+
+    /* Awaiting for start */
+    STATE_PAUSED = 1 << STATE_SHIFT,
+
+    /* Active */
+    STATE_RUNNING = 2 << STATE_SHIFT,
+
+    /* Shift to get the type */
+    TYPE_SHIFT = 2,
+
+    /* MASK to get the type */
+    TYPE_MASK = 3,
+
+    /* A simple state that interpolate values over time */
+    TYPE_SIMPLE = 0 << TYPE_SHIFT,
 
     /* Start the change in pause mode */
     FLAG_PAUSED = 1 << 8,
@@ -213,6 +222,10 @@ static int change_state(Change const* const change) {
 static void change_newstate(Change* const change, State new_state) {
     change->state &= ~(STATE_MASK << STATE_SHIFT);
     change->state |= (new_state & STATE_MASK) << STATE_SHIFT;
+}
+
+static int change_type(Change const* const change) {
+    return (change->state >> TYPE_SHIFT) & TYPE_MASK;
 }
 
 static int change_ispaused(Change const* const change) {
@@ -454,7 +467,7 @@ static int create_change(lua_State* const L, int const to) {
         }
 
         change->u.simple.ease_func = s_ease_funcs[ease];
-        change->state = flags;
+        change->state = flags | TYPE_SIMPLE;
         change->state |= flags & FLAG_PAUSED ? STATE_PAUSED : STATE_RUNNING;
     }
 
@@ -569,12 +582,19 @@ static int l_update(lua_State* const L) {
     size_t const count = s_num_changes;
 
     for (i = 0; i < count; i++) {
-        if (change_state(s_changes + i) != STATE_RUNNING) {
+        Change* const change = s_changes + i;
+
+        if (change_state(change) != STATE_RUNNING) {
             /* Only process active changes */
             continue;
         }
 
-        update_change(L, i, dt);
+        int const type = change_type(change);
+
+        switch (type) {
+            case TYPE_SIMPLE: update_change(L, i, dt); break;
+            default: return luaL_error(L, "invalid change type: %d", type);
+        }
     }
 
     return 0;
