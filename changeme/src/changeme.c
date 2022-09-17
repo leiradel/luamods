@@ -308,6 +308,8 @@ static int l_repeats(lua_State* const L) {
             lua_settop(L, 1);
             return 1;
         }
+
+        return luaL_error(L, "change is not paused");
     }
 
     return luaL_error(L, "change is dead");
@@ -327,6 +329,8 @@ static int l_alarm(lua_State* const L) {
             lua_settop(L, 1);
             return 1;
         }
+
+        return luaL_error(L, "change is not paused");
     }
 
     return luaL_error(L, "change is dead");
