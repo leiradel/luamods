@@ -52,53 +52,25 @@ SOFTWARE.
 #define INVALID_INDEX SIZE_MAX
 
 /* States and flags */
-typedef enum {
-    /* Shift to get the state */
-    STATE_SHIFT = 0,
-
-    /* Mask to get the state */
-    STATE_MASK = 3,
-
+enum {
     /* Free for use, will not be processed */
-    STATE_UNUSED = 0 << STATE_SHIFT,
+    STATE_UNUSED = 0,
 
     /* Awaiting for start */
-    STATE_PAUSED = 1 << STATE_SHIFT,
+    STATE_PAUSED = 1,
 
     /* Active */
-    STATE_RUNNING = 2 << STATE_SHIFT,
+    STATE_RUNNING = 2,
 
-    /* Shift to get the type */
-    TYPE_SHIFT = 2,
+    /* A simple change that interpolate values over time */
+    TYPE_SIMPLE = 0,
 
-    /* MASK to get the type */
-    TYPE_MASK = 3,
-
-    /* A simple state that interpolate values over time */
-    TYPE_SIMPLE = 0 << TYPE_SHIFT,
-
-    /* Start the change in pause mode */
-    FLAG_PAUSED = 1 << 8,
-
-    /* Repeat the change when it ends */
-    FLAG_REPEAT = 1 << 9,
-
-    /* Affect the fields only once at the end of the duration period */
-    FLAG_ALARM = 1 << 10,
-
-    /* Mask to get the ease function */
-    EASE_MASK = 0xff0000
-}
-State;
-
-/* The type of an ease function in easing.inl */
-typedef lua_Number(*EaseFunc)(lua_Number);
+    /* A group change that runs child changes in sequence */
+    TYPE_GROUP = 1,
+};
 
 /* State for simple changes */
 typedef struct {
-    /* The ease function to use with this change */
-    EaseFunc ease_func;
-
     /* The initial values for the fields */
     lua_Number initial_values[CHANGEME_MAX_PAIRS];
 
@@ -134,7 +106,23 @@ typedef struct {
     u;
 
     /* In what state this change is, and its flags */
-    State state;
+    struct {
+        /* The current state of the change */
+        unsigned state: 2;
+
+        /* The type of the change */
+        unsigned type: 1;
+
+        /* The ease function to use with the change */
+        unsigned ease_func: 6;
+
+        /* Should the change repeat after the end? */ 
+        unsigned repeat: 1;
+
+        /* Should the change only run the callback once at the end? */
+        unsigned alarm: 1;
+    }
+    state;
 
     /* The change tag to differentiate living and dead changes apart */
     unsigned tag;
@@ -179,6 +167,9 @@ static size_t s_reserved_changes;
 /* The head of the list of free changes */
 static size_t s_free;
 
+/* The type of an ease function in easing.inl */
+typedef lua_Number(*EaseFunc)(lua_Number);
+
 /* An array with all the ease functions from easing.inl */
 static const EaseFunc s_ease_funcs[] = {
     LinearInterpolation,
@@ -213,32 +204,6 @@ static const EaseFunc s_ease_funcs[] = {
     SineEaseOut,
     SineEaseInOut,
 };
-
-/* Functions to access the bits of the change's state */
-static int change_state(Change const* const change) {
-    return (change->state >> STATE_SHIFT) & STATE_MASK;
-}
-
-static void change_newstate(Change* const change, State new_state) {
-    change->state &= ~(STATE_MASK << STATE_SHIFT);
-    change->state |= (new_state & STATE_MASK) << STATE_SHIFT;
-}
-
-static int change_type(Change const* const change) {
-    return (change->state >> TYPE_SHIFT) & TYPE_MASK;
-}
-
-static int change_ispaused(Change const* const change) {
-    return (change->state & FLAG_PAUSED) != 0;
-}
-
-static int change_isrepeating(Change const* const change) {
-    return (change->state & FLAG_REPEAT) != 0;
-}
-
-static int change_isalarm(Change const* const change) {
-    return (change->state & FLAG_ALARM) != 0;
-}
 
 /* Allocates a new change */
 static size_t alloc_change(void) {
@@ -289,8 +254,7 @@ static void free_change(lua_State* const L, size_t const index) {
     s_free = index;
 
     /* Make sure it won't be processed anymore */
-    change->state = STATE_UNUSED;
-    change_newstate(change, STATE_UNUSED);
+    change->state.state = STATE_UNUSED;
 
     /* Release the references to the Lua values */
     luaL_unref(L, LUA_REGISTRYINDEX, change->my_ref);
@@ -316,16 +280,56 @@ static int l_start(lua_State* const L) {
     if (index != INVALID_INDEX) {
         Change* const change = s_changes + index;
 
-        if (change_ispaused(change)) {
+        if (change->state.state == STATE_PAUSED) {
             /* Make it run */
-            change_newstate(change, STATE_RUNNING);
-            return 0;
+            change->state.state = STATE_RUNNING;
+
+            lua_settop(L, 1);
+            return 1;
+        }
+
+        return luaL_error(L, "change is not paused");
+    }
+
+    return luaL_error(L, "change is dead");
+}
+
+/* Makes a change repeat after the end */
+static int l_repeats(lua_State* const L) {
+    size_t const index = check_change(L, 1);
+
+    if (index != INVALID_INDEX) {
+        Change* const change = s_changes + index;
+
+        if (change->state.state == STATE_PAUSED) {
+            /* Set the repeat flag */
+            change->state.repeat = 1;
+
+            lua_settop(L, 1);
+            return 1;
         }
     }
 
-    lua_pushnil(L);
-    lua_pushliteral(L, "change is not paused");
-    return 2;
+    return luaL_error(L, "change is dead");
+}
+
+/* Makes the change act as an alarm */
+static int l_alarm(lua_State* const L) {
+    size_t const index = check_change(L, 1);
+
+    if (index != INVALID_INDEX) {
+        Change* const change = s_changes + index;
+
+        if (change->state.state == STATE_PAUSED) {
+            /* Set the alarm flag */
+            change->state.alarm = 1;
+
+            lua_settop(L, 1);
+            return 1;
+        }
+    }
+
+    return luaL_error(L, "change is dead");
 }
 
 /* Kills a running change */
@@ -337,15 +341,13 @@ static int l_kill(lua_State* const L) {
         return 0;
     }
 
-    lua_pushnil(L);
-    lua_pushliteral(L, "change is already dead");
-    return 2;
+    return luaL_error(L, "change is already dead");
 }
 
 /* Returns the status of a change */
 static int l_status(lua_State* const L) {
     size_t const index = check_change(L, 1);
-    unsigned const state = index == INVALID_INDEX ? STATE_UNUSED : change_state(s_changes + index);
+    unsigned const state = index == INVALID_INDEX ? STATE_UNUSED : s_changes[index].state.state;
 
     switch (state) {
         case STATE_UNUSED: {
@@ -373,7 +375,7 @@ static int l_status(lua_State* const L) {
 static int l_gc(lua_State* const L) {
     size_t const index = check_change(L, 1);
 
-    if (index != INVALID_INDEX && change_ispaused(s_changes + index)) {
+    if (index != INVALID_INDEX && s_changes[index].state.state == STATE_PAUSED) {
         /**
          * Only free changes here if they are paused, since there are no
          * references to it left in Lua land and they cannot be started
@@ -407,10 +409,12 @@ static int push_change(lua_State* const L, Change* const change) {
     /* Set the userdata's metatable */
     if (luaL_newmetatable(L, "change")) {
         static const luaL_Reg methods[] = {
-            {"start",  l_start},
-            {"kill",   l_kill},
-            {"status", l_status},
-            {NULL,     NULL}
+            {"start",   l_start},
+            {"repeats", l_repeats},
+            {"alarm",   l_alarm},
+            {"kill",    l_kill},
+            {"status",  l_status},
+            {NULL,      NULL}
         };
 
         luaL_newlib(L, methods);
@@ -443,6 +447,13 @@ static int create_change(lua_State* const L, int const to) {
 
     Change* const change = s_changes + index;
 
+    /* Initialize constant values */
+    change->state.state = STATE_PAUSED;
+    change->state.type = TYPE_SIMPLE;
+    change->state.repeat = 0;
+    change->state.alarm = 0;
+    change->elapsed_time = 0;
+
     /* Check the change duration */
     if (!lua_isnumber(L, 1)) {
         free_change(L, index);
@@ -451,24 +462,21 @@ static int create_change(lua_State* const L, int const to) {
 
     change->duration = lua_tonumber(L, 1);
 
-    /* Evaluate the flags */
+    /* Get the ease function */
     {
         if (!lua_isinteger(L, 2)) {
             free_change(L, index);
-            return luaL_error(L, "flags is not an integer");
+            return luaL_error(L, "invalid ease function");
         }
 
-        lua_Integer const flags = lua_tointeger(L, 2);
-        size_t const ease = (size_t)((flags >> 16) & 0xff);
+        lua_Integer const ease_func = lua_tointeger(L, 2);
 
-        if (ease >= sizeof(s_ease_funcs) / sizeof(s_ease_funcs[0])) {
+        if (ease_func < 0 || (lua_Unsigned)ease_func >= sizeof(s_ease_funcs) / sizeof(s_ease_funcs[0])) {
             free_change(L, index);
-            return luaL_error(L, "invalid ease function %d", (int)ease);
+            return luaL_error(L, "invalid ease function %I", ease_func);
         }
 
-        change->u.simple.ease_func = s_ease_funcs[ease];
-        change->state = flags | TYPE_SIMPLE;
-        change->state |= flags & FLAG_PAUSED ? STATE_PAUSED : STATE_RUNNING;
+        change->state.ease_func = ease_func;
     }
 
     /* Iterate over pairs of <initial value, target value> */
@@ -508,7 +516,6 @@ static int create_change(lua_State* const L, int const to) {
     /* Make a reference to the callback to call when the change ends */
     change->u.simple.callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-    change->elapsed_time = 0;
     return push_change(L, change);
 }
 
@@ -528,14 +535,14 @@ static void update_change(lua_State* const L, size_t const index, lua_Number con
     change->elapsed_time += dt;
     int const finished = change->elapsed_time >= change->duration;
 
-    if (!finished && change_isalarm(change)) {
+    if (!finished && change->state.alarm) {
         /* Changes with this flag only update when they finish */
         return;
     }
 
     /* Apply the ease function */
     lua_Number const in = finished ? 1 : change->elapsed_time / change->duration;
-    lua_Number const out = change->u.simple.ease_func(in);
+    lua_Number const out = s_ease_funcs[change->state.ease_func](in);
 
     /* Update the fields in the object */
     lua_rawgeti(L, LUA_REGISTRYINDEX, change->u.simple.callback_ref);
@@ -556,13 +563,13 @@ static void update_change(lua_State* const L, size_t const index, lua_Number con
     Change* const change2 = s_changes + index;
 
     // Check if the change hasn't been killed in the callback
-    if (change_state(change2) == STATE_UNUSED) {
+    if (change2->state.state == STATE_UNUSED) {
         return;
     }
 
     /* Repeat the change, or free it if it's finished */
     if (finished) {
-        if (change_isrepeating(change2)) {
+        if (change2->state.repeat) {
             change2->elapsed_time -= change2->duration;
         }
         else {
@@ -584,12 +591,12 @@ static int l_update(lua_State* const L) {
     for (i = 0; i < count; i++) {
         Change* const change = s_changes + i;
 
-        if (change_state(change) != STATE_RUNNING) {
+        if (change->state.state != STATE_RUNNING) {
             /* Only process active changes */
             continue;
         }
 
-        int const type = change_type(change);
+        int const type = change->state.type;
 
         switch (type) {
             case TYPE_SIMPLE: update_change(L, i, dt); break;
@@ -643,9 +650,6 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     };
 
     static struct {char const* const name; lua_Integer const value;} const constants[] = {
-        {"PAUSED", FLAG_PAUSED},
-        {"REPEAT", FLAG_REPEAT},
-        {"ALARM", FLAG_ALARM},
         {"MAX_PAIRS", CHANGEME_MAX_PAIRS}
     };
 
@@ -667,7 +671,7 @@ LUALIB_API int luaopen_changeme(lua_State* const L) {
     luaL_setfuncs(L, functions, 0);
 
     for (size_t i = 0; i < ease_count; i++) {
-        lua_pushinteger(L, (lua_Integer)i << 16);
+        lua_pushinteger(L, (lua_Integer)i);
         lua_setfield(L, -2, ease_names[i]);
     }
 
