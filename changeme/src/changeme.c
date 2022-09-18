@@ -126,9 +126,6 @@ typedef struct {
 
     /* The change tag to differentiate living and dead changes apart */
     unsigned tag;
-
-    /* The reference to the change object */
-    int my_ref;
 }
 Change;
 
@@ -256,8 +253,7 @@ static void free_change(lua_State* const L, size_t const index) {
     /* Make sure it won't be processed anymore */
     change->state.state = STATE_UNUSED;
 
-    /* Release the references to the Lua values */
-    luaL_unref(L, LUA_REGISTRYINDEX, change->my_ref);
+    /* Release the reference to the callback */
     luaL_unref(L, LUA_REGISTRYINDEX, change->u.simple.callback_ref);
 }
 
@@ -432,11 +428,6 @@ static int push_change(lua_State* const L, Change* const change) {
     }
 
     lua_setmetatable(L, -2);
-
-    /* Make a reference to itself */
-    lua_pushvalue(L, -1);
-    change->my_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-
     return 1;
 }
 
@@ -550,7 +541,6 @@ static void update_change(lua_State* const L, size_t const index, lua_Number con
 
     /* Update the fields in the object */
     lua_rawgeti(L, LUA_REGISTRYINDEX, change->u.simple.callback_ref);
-    lua_rawgeti(L, LUA_REGISTRYINDEX, change->my_ref);
 
     size_t const num_pairs = change->u.simple.num_pairs;
 
@@ -561,7 +551,7 @@ static void update_change(lua_State* const L, size_t const index, lua_Number con
         lua_pushnumber(L, current);
     }
 
-    lua_call(L, (int)num_pairs + 1, 0);
+    lua_call(L, (int)num_pairs, 0);
 
     // s_changes may have been reallocated here during the callback execution
     Change* const change2 = s_changes + index;
