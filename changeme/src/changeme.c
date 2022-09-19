@@ -60,33 +60,8 @@ enum {
     STATE_PAUSED = 1,
 
     /* Active */
-    STATE_RUNNING = 2,
-
-    /* A simple change that interpolate values over time */
-    TYPE_SIMPLE = 0,
-
-    /* A group change that runs child changes in sequence */
-    TYPE_GROUP = 1,
+    STATE_RUNNING = 2
 };
-
-/* State for simple changes */
-typedef struct {
-    /* The initial values for the fields */
-    lua_Number initial_values[CHANGEME_MAX_PAIRS];
-
-    /* The amount of change for the duration period */
-    lua_Number delta_values[CHANGEME_MAX_PAIRS];
-
-    // The number of values used in the array
-    size_t num_pairs;
-
-    /**
-     * The reference to a callback function that will be called when the
-     * change finished
-     */
-    int callback_ref;
-}
-Simple;
 
 /* The full change state, fields sorted by alignment descending */
 typedef struct {
@@ -96,22 +71,34 @@ typedef struct {
     /* The elapsed time since the change was started */
     lua_Number elapsed_time;
 
+    /* The initial values for the fields */
+    lua_Number initial_values[CHANGEME_MAX_PAIRS];
+
+    /* The amount of change for the duration period */
+    lua_Number delta_values[CHANGEME_MAX_PAIRS];
+
     union {
-        /* Fields for simple changes */
-        Simple simple;
+        // The number of values used in the array
+        size_t num_pairs;
 
         /* The index of the next free change in the free list */
         size_t next_free;
     }
     u;
 
+    /**
+     * The reference to a callback function that will be called when the
+     * change finished
+     */
+    int callback_ref;
+
+    /* The change tag to differentiate living and dead changes apart */
+    unsigned tag;
+
     /* In what state this change is, and its flags */
     struct {
         /* The current state of the change */
         unsigned state: 2;
-
-        /* The type of the change */
-        unsigned type: 1;
 
         /* The ease function to use with the change */
         unsigned ease_func: 6;
@@ -123,9 +110,6 @@ typedef struct {
         unsigned alarm: 1;
     }
     state;
-
-    /* The change tag to differentiate living and dead changes apart */
-    unsigned tag;
 }
 Change;
 
@@ -254,7 +238,7 @@ static void free_change(lua_State* const L, size_t const index) {
     change->state.state = STATE_UNUSED;
 
     /* Release the reference to the callback */
-    luaL_unref(L, LUA_REGISTRYINDEX, change->u.simple.callback_ref);
+    luaL_unref(L, LUA_REGISTRYINDEX, change->callback_ref);
 }
 
 /* Checks for a valid change in the Lua stack */
@@ -444,7 +428,6 @@ static int create_change(lua_State* const L, int const to) {
 
     /* Initialize constant values */
     change->state.state = STATE_PAUSED;
-    change->state.type = TYPE_SIMPLE;
     change->state.repeat = 0;
     change->state.alarm = 0;
     change->elapsed_time = 0;
@@ -477,7 +460,7 @@ static int create_change(lua_State* const L, int const to) {
     /* Iterate over pairs of <initial value, target value> */
     {
         /* Keep track of the number of value pairs since there's a limit */
-        size_t const max_pairs = sizeof(change->u.simple.delta_values) / sizeof(change->u.simple.delta_values[0]);
+        size_t const max_pairs = sizeof(change->delta_values) / sizeof(change->delta_values[0]);
         size_t num_pairs = 0;
 
         /* Walk the stack */
@@ -492,24 +475,24 @@ static int create_change(lua_State* const L, int const to) {
                 return luaL_error(L, "too many <initial, target> value pairs, maximum is %zu", max_pairs);
             }
 
-            change->u.simple.initial_values[num_pairs] = lua_tonumber(L, i);
+            change->initial_values[num_pairs] = lua_tonumber(L, i);
             lua_Number by = lua_tonumber(L, i + 1);
 
             if (to) {
                 /**
                  * If the target value is absolute, evaluate the change amount
                  */
-                by -= change->u.simple.initial_values[num_pairs];
+                by -= change->initial_values[num_pairs];
             }
 
-            change->u.simple.delta_values[num_pairs] = by;
+            change->delta_values[num_pairs] = by;
         }
 
-        change->u.simple.num_pairs = num_pairs;
+        change->u.num_pairs = num_pairs;
     }
 
     /* Make a reference to the callback to call when the change ends */
-    change->u.simple.callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    change->callback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
     return push_change(L, change);
 }
@@ -540,13 +523,13 @@ static void update_change(lua_State* const L, size_t const index, lua_Number con
     lua_Number const out = s_ease_funcs[change->state.ease_func](in);
 
     /* Update the fields in the object */
-    lua_rawgeti(L, LUA_REGISTRYINDEX, change->u.simple.callback_ref);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, change->callback_ref);
 
-    size_t const num_pairs = change->u.simple.num_pairs;
+    size_t const num_pairs = change->u.num_pairs;
 
     for (size_t i = 0; i < num_pairs; i++) {
-        lua_Number const current = change->u.simple.initial_values[i] +
-                                   change->u.simple.delta_values[i] * out;
+        lua_Number const current = change->initial_values[i] +
+                                   change->delta_values[i] * out;
 
         lua_pushnumber(L, current);
     }
@@ -590,12 +573,7 @@ static int l_update(lua_State* const L) {
             continue;
         }
 
-        int const type = change->state.type;
-
-        switch (type) {
-            case TYPE_SIMPLE: update_change(L, i, dt); break;
-            default: return luaL_error(L, "invalid change type: %d", type);
-        }
+        update_change(L, i, dt);
     }
 
     return 0;
