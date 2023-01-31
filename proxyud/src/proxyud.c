@@ -1,6 +1,8 @@
 #include <lua.h>
 #include <lauxlib.h>
 
+#include "proxyud.h"
+
 static int l_new(lua_State* const L) {
     int const top = lua_gettop(L);
 
@@ -42,9 +44,9 @@ LUAMOD_API int luaopen_proxyud(lua_State* L) {
     };
 
     static struct {char const* const name; char const* const value;} const info[] = {
-        {"_COPYRIGHT", "Copyright (c) 2020-2022 Andre Leiradella"},
+        {"_COPYRIGHT", "Copyright (c) 2020-2023 Andre Leiradella"},
         {"_LICENSE", "MIT"},
-        {"_VERSION", "1.0.0"},
+        {"_VERSION", "1.1.0"},
         {"_NAME", "proxyud"},
         {"_URL", "https://github.com/leiradel/luamods/proxyud"},
         {"_DESCRIPTION", "Creates proxy userdata objects"}
@@ -60,6 +62,16 @@ LUAMOD_API int luaopen_proxyud(lua_State* L) {
         lua_pushstring(L, info[i].value);
         lua_setfield(L, -2, info[i].name);
     }
+
+    int const res = luaL_loadbufferx(L, proxyud_lua, sizeof(proxyud_lua), "proxyud.lua", "t");
+
+    if (res != LUA_OK) {
+        return lua_error(L);
+    }
+
+    lua_call(L, 0, 1);
+    lua_pushvalue(L, -2);
+    lua_call(L, 1, 0);
 
     return 1;
 }

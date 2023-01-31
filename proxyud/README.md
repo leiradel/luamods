@@ -6,11 +6,7 @@ The returned proxy is **not** the value passed to `new` with the given metatable
 
 ## Building
 
-It's just one file, either add it to your project or build a loadable Lua module with:
-
-```
-$ gcc -std=c99 -O2 -Werror -Wall -Wpedantic -shared -fPIC -o proxyud.so proxyud.c
-```
+`make` should do the job. It will generate a shared object that can be [require](https://www.lua.org/manual/5.3/manual.html#pdf-require)d in Lua code.
 
 ## Usage
 
@@ -70,10 +66,22 @@ ud3.pi = 3 -- raises an error
 
 Does the same thing as `debug.getuservalue`, but checks if the argument is a full userdata. Convenience function for when the debug library is not available.
 
+### `proxyud.identitymetatable`
+
+Returns a metatable that forwards all metamethods to the original object. Each call to `proxyud.identitymetatable` returns a new table.
+
+The following metamethods are not present in the identity metatable:
+
+* `__gc`: This metamethod would call the original object's `__gc`, which would be called again when the original object is collected.
+* `__mode`: This is a string rather than a function, so it's not possible to make it return the value from the original object's metatable.
+* `__name`: Same as with `__mode`.
+
 ## Changelog
 
 * 1.0.0
   * First public release
+* 1.1.0
+  * Added `proxyud.identitymetatable`
 
 ## License
 
