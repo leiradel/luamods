@@ -453,16 +453,16 @@ local function emit(fsm, path)
     out:write('typedef enum {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, fsm.id, '_', state.id, ',\n')
+        out:write(idn, fsm.id, '_State_', state.id, ',\n')
     end
 
     out:write('}\n')
-    out:write(fsm.id, '_state_t;\n\n')
+    out:write(fsm.id, '_State;\n\n')
 
     -- The FSM state
     out:write('/* The FSM */\n')
     out:write('typedef struct {\n')
-    out:write(idn, fsm.id, '_state_t state;\n')
+    out:write(idn, fsm.id, '_State state;\n')
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(idn, parameter.type, ' ', parameter.id, ';\n')
@@ -470,16 +470,16 @@ local function emit(fsm, path)
     
     out:write('\n')
     out:write('#ifdef DEBUG_FSM\n')
-    out:write(idn, '/* Set those after calling ', fsm.id, '_init when DEBUG_FSM is defined */\n')
+    out:write(idn, '/* Set those after calling ', fsm.id, '_Init when DEBUG_FSM is defined */\n')
     out:write(idn, 'void (*vprintf)(void* const ud, char const* const fmt, va_list args);\n')
     out:write(idn, 'void* vprintf_ud;\n')
     out:write('#endif\n')
     out:write('}\n')
-    out:write(fsm.id, '_t;\n\n')
+    out:write(fsm.id, '_Context;\n\n')
 
     -- The initialization function
     out:write('/* Initialization */\n')
-    out:write('void ', fsm.id, '_init(', fsm.id, '_t* const self')
+    out:write('void ', fsm.id, '_Init(', fsm.id, '_Context* const self')
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(', ', parameter.type, ' const ', parameter.id)
@@ -489,14 +489,14 @@ local function emit(fsm, path)
 
     -- Query functions
     out:write('/* Query */\n')
-    out:write(fsm.id, '_state_t ', fsm.id, '_current_state(', fsm.id, '_t const* const self);\n')
-    out:write('int ', fsm.id, '_can_transition_to(', fsm.id, '_t const* const self, ', fsm.id, '_state_t const next);\n\n')
+    out:write(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self);\n')
+    out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next);\n\n')
 
     -- Transitions
     out:write('/* Transitions */\n')
 
     for _, transition in ipairs(allTransitions) do
-        out:write('int ', fsm.id, '_', transition.id, '(', fsm.id, '_t* const self')
+        out:write('int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self')
 
         for _, parameter in ipairs(transition.parameters) do
             out:write(', ', parameter.type, ' ', parameter.id)
@@ -510,7 +510,7 @@ local function emit(fsm, path)
     -- Debug
     out:write('/* Debug */\n')
     out:write('#ifdef DEBUG_FSM\n')
-    out:write('char const* ', fsm.id, '_state_name(', fsm.id, '_state_t const state);\n')
+    out:write('char const* ', fsm.id, '_StateName(', fsm.id, '_State const state);\n')
     out:write('#endif\n\n')
 
     -- Finish up
@@ -533,7 +533,7 @@ local function emit(fsm, path)
 
     -- Helper printf-like function
     out:write('#ifdef DEBUG_FSM\n')
-    out:write('static void fsmprintf(', fsm.id, '_t* const self, const char* fmt, ...) {\n')
+    out:write('static void fsmprintf(', fsm.id, '_Context* const self, const char* fmt, ...) {\n')
     out:write(idn, 'if (self->vprintf != NULL) {\n')
     out:write(idn, idn, 'va_list args;\n')
     out:write(idn, idn, 'va_start(args, fmt);\n')
@@ -548,14 +548,14 @@ local function emit(fsm, path)
 
     -- The initialization function
     out:write('/* Initialization */\n')
-    out:write('void ', fsm.id, '_init(', fsm.id, '_t* const self')
+    out:write('void ', fsm.id, '_Init(', fsm.id, '_Context* const self')
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(', ', parameter.type, ' const ', parameter.id)
     end
 
     out:write(') {\n')
-    out:write(idn, 'self->state = ', fsm.id, '_', fsm.begin, ';\n\n')
+    out:write(idn, 'self->state = ', fsm.id, '_State_', fsm.begin, ';\n\n')
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(idn, 'self->', parameter.id, ' = ', parameter.id, ';\n')
@@ -564,15 +564,15 @@ local function emit(fsm, path)
     out:write('}\n\n')
 
     -- Query functions
-    out:write(fsm.id, '_state_t ', fsm.id, '_current_state(', fsm.id, '_t const* const self) {\n')
+    out:write(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self) {\n')
     out:write(idn, 'return self->state;\n')
     out:write('}\n\n')
 
-    out:write('int ', fsm.id, '_can_transition_to(', fsm.id, '_t const* const self, ', fsm.id, '_state_t const next) {\n')
+    out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next) {\n')
     out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case ', fsm.id, '_', state.id, ':\n')
+        out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
 
         if #state.transitions ~= 0 then
             out:write(idn, idn, idn, 'switch (next) {\n')
@@ -590,7 +590,7 @@ local function emit(fsm, path)
             table.sort(sorted, function(id1, id2) return id1 < id2 end)
 
             for _, stateId in ipairs(sorted) do
-                out:write(idn, idn, idn, idn, 'case ', fsm.id, '_', stateId, ':\n')
+                out:write(idn, idn, idn, idn, 'case ', fsm.id, '_State_', stateId, ':\n')
             end
 
             out:write(idn, idn, idn, idn, idn, 'return 1;\n')
@@ -607,7 +607,7 @@ local function emit(fsm, path)
     out:write('}\n\n')
 
     -- Global before event
-    out:write('static int global_before(', fsm.id, '_t* const self) {\n')
+    out:write('static int global_before(', fsm.id, '_Context* const self) {\n')
     out:write(idn, '(void)self;\n')
 
     if fsm.before then
@@ -619,12 +619,12 @@ local function emit(fsm, path)
     out:write('}\n\n')
 
     -- State-specific before events
-    out:write('static int local_before(', fsm.id, '_t* const self) {\n')
+    out:write('static int local_before(', fsm.id, '_Context* const self) {\n')
     out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
         if state.before then
-            out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': {\n')
+            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
             out:write('/*#line ', state.before.line, ' "', path, '"*/\n')
             out:write(state.before.lexeme, '\n')
             out:write(idn, idn, '}\n')
@@ -638,7 +638,7 @@ local function emit(fsm, path)
     out:write('}\n\n')
 
     -- Global after event
-    out:write('static void global_after(', fsm.id, '_t* const self) {\n')
+    out:write('static void global_after(', fsm.id, '_Context* const self) {\n')
     out:write(idn, '(void)self;\n')
 
     if fsm.after then
@@ -649,12 +649,12 @@ local function emit(fsm, path)
     out:write('}\n\n')
 
     -- State-specific after events
-    out:write('static void local_after(', fsm.id, '_t* const self) {\n')
+    out:write('static void local_after(', fsm.id, '_Context* const self) {\n')
     out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
         if state.after then
-            out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': {\n')
+            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
             out:write('/*#line ', state.after.line, ' "', path, '"*/\n')
             out:write(state.after.lexeme, '\n')
             out:write(idn, idn, '}\n')
@@ -668,7 +668,7 @@ local function emit(fsm, path)
 
     -- Transitions
     for _, transition in ipairs(allTransitions) do
-        out:write('int ', fsm.id, '_', transition.id, '(', fsm.id, '_t* const self')
+        out:write('int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self')
 
         for _, parameter in ipairs(transition.parameters) do
             out:write(', ', parameter.type, ' ', parameter.id)
@@ -690,7 +690,7 @@ local function emit(fsm, path)
         for _, state in ipairs(valid) do
             local transition2 = state.transitions[transition.id]
 
-            out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': {\n')
+            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
             out:write(idn, idn, idn, 'if (!global_before(self)) {\n')
             out:write(idn, idn, idn, idn, 'PRINTF(\n')
             out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed global precondition while switching to %s",\n')
@@ -712,7 +712,7 @@ local function emit(fsm, path)
             end
 
             if transition2.type == 'state' then
-                out:write(idn, idn, idn, 'self->state = ', fsm.id, '_', transition2.target.id, ';\n\n')
+                out:write(idn, idn, idn, 'self->state = ', fsm.id, '_State_', transition2.target.id, ';\n\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
                     local list = {'self'}
@@ -726,15 +726,15 @@ local function emit(fsm, path)
 
                 if #transition2.steps == 1 then
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_', transition2.steps[1].id, '(', args, ');\n')
+                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_Transition_', transition2.steps[1].id, '(', args, ');\n')
                 else
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_', transition2.steps[1].id, '(', args, ') &&\n')
+                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_Transition_', transition2.steps[1].id, '(', args, ') &&\n')
 
                     for i = 2, #transition2.steps do
                         local args = arguments(transition2.steps[i].arguments)
                         local eol = i == #transition2.steps and ';' or ' &&'
-                        out:write(idn, idn, idn, '                 ', fsm.id, '_', transition2.steps[i].id, '(', args, ')', eol, '\n')
+                        out:write(idn, idn, idn, '                 ', fsm.id, '_Transition_', transition2.steps[i].id, '(', args, ')', eol, '\n')
                     end
 
                     out:write('\n')
@@ -775,11 +775,11 @@ local function emit(fsm, path)
 
     -- State name
     out:write('#ifdef DEBUG_FSM\n')
-    out:write('const char* ', fsm.id, '_state_name(', fsm.id, '_state_t const state) {\n')
+    out:write('const char* ', fsm.id, '_StateName(', fsm.id, '_State const state) {\n')
     out:write(idn, 'switch (state) {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case ', fsm.id, '_', state.id, ': return "', state.id, '";\n')
+        out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': return "', state.id, '";\n')
     end
 
     out:write(idn, idn, 'default: break;\n')
