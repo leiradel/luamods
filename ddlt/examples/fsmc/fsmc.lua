@@ -715,7 +715,7 @@ local function emit(fsm, path)
                 out:write(idn, idn, idn, 'self->state = ', fsm.id, '_', transition2.target.id, ';\n\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
-                    local list = {}
+                    local list = {'self'}
 
                     for _, arg in ipairs(args) do
                         list[#list + 1] = arg.id
@@ -726,15 +726,15 @@ local function emit(fsm, path)
 
                 if #transition2.steps == 1 then
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'const int ok = ', transition2.steps[1].id, '(', args, ');\n')
+                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_', transition2.steps[1].id, '(', args, ');\n')
                 else
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'const int ok = ', transition2.steps[1].id, '(', args, ') &&\n')
+                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_', transition2.steps[1].id, '(', args, ') &&\n')
 
                     for i = 2, #transition2.steps do
                         local args = arguments(transition2.steps[i].arguments)
                         local eol = i == #transition2.steps and ';' or ' &&'
-                        out:write(idn, idn, idn, '               ', transition2.steps[i].id, '(', args, ')', eol, '\n')
+                        out:write(idn, idn, idn, '                 ', fsm.id, '_', transition2.steps[i].id, '(', args, ')', eol, '\n')
                     end
 
                     out:write('\n')
@@ -750,7 +750,7 @@ local function emit(fsm, path)
                 out:write(idn, idn, idn, ');\n\n')
                 out:write(idn, idn, idn, 'return 1;\n')
             elseif transition2.type == 'sequence' then
-                out:write(idn, idn, idn, 'if (ok) {\n')
+                out:write(idn, idn, idn, 'if (ok__) {\n')
                 out:write(idn, idn, idn, idn, 'local_after(self);\n')
                 out:write(idn, idn, idn, idn, 'global_after(self);\n\n')
                 out:write(idn, idn, idn, '}\n')
@@ -760,7 +760,7 @@ local function emit(fsm, path)
                 out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
                 out:write(idn, idn, idn, idn, ');\n')
                 out:write(idn, idn, idn, '}\n\n')
-                out:write(idn, idn, idn, 'return __ok;\n')
+                out:write(idn, idn, idn, 'return ok__;\n')
             end
 
             out:write(idn, idn, '}\n\n')
