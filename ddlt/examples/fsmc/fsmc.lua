@@ -540,9 +540,9 @@ local function emit(fsm, path)
     out:write(idn, idn, 'va_end(args);\n')
     out:write(idn, '}\n')
     out:write('}\n\n')
-    out:write('#define PRINTF(self, fmt...) do { fsmprintf(self, fmt); } while (0)\n')
+    out:write('#define PRINTF(self, ...) do { fsmprintf(self, __VA_ARGS__); } while (0)\n')
     out:write('#else\n')
-    out:write('#define PRINTF(self, fmt...) do {} while (0)\n')
+    out:write('#define PRINTF(self, ...) do {} while (0)\n')
     out:write('#endif\n\n')
 
     -- The initialization function
