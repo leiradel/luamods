@@ -521,8 +521,7 @@ local function emit(fsm, path)
     local out = assert(io.open(ddlt.join(dir, name, 'c'), 'w'))
 
     -- Include the necessary headers
-    out:write('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n\n')
-    out:write('#include "', name, '.h"\n\n')
+    out:write('/* Generated with FSM compiler: https://github.com/leiradel/luamods/tree/master/ddlt */\n\n')
     out:write('#include <stddef.h>\n\n')
 
     -- Implementation free form code
