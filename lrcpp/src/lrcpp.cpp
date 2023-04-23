@@ -8,7 +8,7 @@
 #define FRONTEND_MT "lrcpp::Frontend"
 
 static lrcpp::Frontend* check(lua_State* const L, int const ndx) {
-    auto self = *(lrcpp::Frontend**)luaL_checkudata(L, ndx, FRONTEND_MT);
+    auto const self = *(lrcpp::Frontend**)luaL_checkudata(L, ndx, FRONTEND_MT);
     return self;
 }
 
@@ -241,8 +241,8 @@ static int l_setControllerPortDevice(lua_State* const L) {
     return 0;
 }
 
-int lrcpp_push(lua_State* L, lrcpp::Frontend* frontend) {
-    auto self = (lrcpp::Frontend**)lua_newuserdata(L, sizeof(lrcpp::Frontend*));
+int lrcpp_push(lua_State* const L, lrcpp::Frontend* frontend) {
+    auto const self = (lrcpp::Frontend**)lua_newuserdata(L, sizeof(lrcpp::Frontend*));
     *self = frontend;
 
     if (luaL_newmetatable(L, FRONTEND_MT)) {
@@ -277,7 +277,7 @@ int lrcpp_push(lua_State* L, lrcpp::Frontend* frontend) {
     return 1;
 }
 
-int lrcpp_openf(lua_State* L) {
+int lrcpp_openf(lua_State* const L) {
     static struct {char const* const name; lua_Integer const value;} const constants[] = {
         {"RETRO_MEMORY_SAVE_RAM", RETRO_MEMORY_SAVE_RAM},
         {"RETRO_MEMORY_RTC", RETRO_MEMORY_RTC},
