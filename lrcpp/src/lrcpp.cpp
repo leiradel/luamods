@@ -7,8 +7,13 @@
 
 #define FRONTEND_MT "lrcpp::Frontend"
 
+static lrcpp::Frontend* check(lua_State* const L, int const ndx) {
+    auto self = *(lrcpp::Frontend**)luaL_checkudata(L, ndx, FRONTEND_MT);
+    return self;
+}
+
 static int l_loadGame(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
     bool ok = false;
 
     if (lua_isstring(L, 2)) {
@@ -18,29 +23,32 @@ static int l_loadGame(lua_State* const L) {
             size_t size = 0;
             char const* const data = luaL_checklstring(L, 3, &size);
 
-            ok = self.loadGame(path, (void const*)data, size);
+            ok = self->loadGame(path, (void const*)data, size);
         }
         else {
-            ok = self.loadGame(path);
+            ok = self->loadGame(path);
         }
     }
     else {
-        ok = self.loadGame();
+        ok = self->loadGame();
     }
 
-    lua_pushboolean(L, ok);
-    return 1;
+    if (!ok) {
+        return luaL_error(L, "error in %s", "loadGame");
+    }
+
+    return 0;
 }
 
 static int l_loadGameSpecial(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
     lua_Integer const game_type = luaL_checkinteger(L, 2);
 
     int const top = lua_gettop(L);
     std::vector<retro_game_info> infos;
 
     for (lua_Integer i = 3; i <= top; i++) {
-        retro_game_info info = {0};
+        retro_game_info info = {};
 
         lua_getfield(L, 3, "path");
         info.path = luaL_checkstring(L, -1);
@@ -54,18 +62,18 @@ static int l_loadGameSpecial(lua_State* const L) {
         infos.emplace_back(info);
     }
 
-    bool const ok = self.loadGameSpecial(game_type, infos.data(), infos.size());
+    if (!self->loadGameSpecial(game_type, infos.data(), infos.size())) {
+        return luaL_error(L, "error in %s", "loadGameSpecial");
+    }
 
-    lua_pushboolean(L, ok);
-    return 1;
+    return 0;
 }
 
 #define NO_ARG(S) \
     static int l_ ## S(lua_State* const L) { \
-        lrcpp::Frontend& self = lrcpp::Frontend::getInstance(); \
-        bool const ok = self.S(); \
-        lua_pushboolean(L, ok); \
-        return 1; \
+        auto const self = check(L, 1); \
+        if (!self->S()) return luaL_error(L, "error in %s", #S); \
+        return 0; \
     }
 
 NO_ARG(run)
@@ -74,11 +82,10 @@ NO_ARG(unloadGame)
 
 #define ARG_UNSIGNED_PTR(S) \
     static int l_ ## S(lua_State* const L) { \
-        lrcpp::Frontend& self = lrcpp::Frontend::getInstance(); \
+        auto const self = check(L, 1); \
         unsigned res = 0; \
-        bool const ok = self.S(&res); \
-        lua_pushboolean(L, ok); \
-        if (ok) { lua_pushinteger(L, res); return 2; } \
+        if (!self->S(&res)) return luaL_error(L, "error in %s", #S); \
+        lua_pushinteger(L, res); \
         return 1; \
     }
 
@@ -87,179 +94,155 @@ NO_ARG(cheatReset)
 ARG_UNSIGNED_PTR(getRegion)
 
 static int l_getSystemInfo(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
 
-    retro_system_info info = {0};
-    bool const ok = self.getSystemInfo(&info);
+    retro_system_info info = {};
 
-    lua_pushboolean(L, ok);
-
-    if (ok) {
-        lua_pushstring(L, info.library_name);
-        lua_pushstring(L, info.library_version);
-        lua_pushstring(L, info.valid_extensions);
-        lua_pushboolean(L, info.need_fullpath);
-        lua_pushboolean(L, info.block_extract);
-
-        return 6;
+    if (!self->getSystemInfo(&info)) {
+        return luaL_error(L, "error in %s", "getSystemInfo");
     }
 
-    return 1;
+    lua_pushstring(L, info.library_name);
+    lua_pushstring(L, info.library_version);
+    lua_pushstring(L, info.valid_extensions);
+    lua_pushboolean(L, info.need_fullpath);
+    lua_pushboolean(L, info.block_extract);
+
+    return 5;
 }
 
 static int l_getSystemAvInfo(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
 
-    retro_system_av_info info = {0};
-    bool const ok = self.getSystemAvInfo(&info);
+    retro_system_av_info info = {};
 
-    lua_pushboolean(L, ok);
-
-    if (ok) {
-        lua_pushinteger(L, info.geometry.base_width);
-        lua_pushinteger(L, info.geometry.base_height);
-        lua_pushinteger(L, info.geometry.max_width);
-        lua_pushinteger(L, info.geometry.max_height);
-        lua_pushnumber(L, info.geometry.aspect_ratio);
-
-        lua_pushnumber(L, info.timing.fps);
-        lua_pushnumber(L, info.timing.sample_rate);
-
-        return 8;
+    if (!self->getSystemAvInfo(&info)) {
+        return luaL_error(L, "error in %s", "getSystemAvInfo");
     }
 
-    return 1;
+    lua_pushinteger(L, info.geometry.base_width);
+    lua_pushinteger(L, info.geometry.base_height);
+    lua_pushinteger(L, info.geometry.max_width);
+    lua_pushinteger(L, info.geometry.max_height);
+    lua_pushnumber(L, info.geometry.aspect_ratio);
+
+    lua_pushnumber(L, info.timing.fps);
+    lua_pushnumber(L, info.timing.sample_rate);
+
+    return 7;
 }
 
 static int l_serializeSize(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
 
     size_t size = 0;
-    bool const ok = self.serializeSize(&size);
 
-    lua_pushboolean(L, ok);
-
-    if (ok) {
-        lua_pushinteger(L, size);
-        return 2;
+    if (!self->serializeSize(&size)) {
+        return luaL_error(L, "error in %s", "serializeSize");
     }
 
+    lua_pushinteger(L, size);
     return 1;
 }
 
 static int l_serialize(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
 
     size_t size = 0;
-    bool const ok1 = self.serializeSize(&size);
 
-    if (!ok1) {
-        lua_pushboolean(L, 0);
-        return 1;
+    if (!self->serializeSize(&size)) {
+        return luaL_error(L, "error in %s", "serializeSize");
     }
 
     void* const data = malloc(size);
 
     if (data == nullptr) {
-        lua_pushboolean(L, 0);
-        return 1;
+        return luaL_error(L, "error allocating memory for the state");
     }
 
-    bool const ok2 = self.serialize(data, size);
-
-    if (!ok2) {
+    if (!self->serialize(data, size)) {
         free(data);
-        lua_pushboolean(L, 0);
-        return 1;
+        return luaL_error(L, "error in %s", "serialize");
     }
 
-    lua_pushboolean(L, 1);
     lua_pushlstring(L, (char const*)data, size);
-
-    free(data);
-    return 2;
+    return 1;
 }
 
 static int l_unserialize(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
 
     size_t size = 0;
     char const* const data = luaL_checklstring(L, 2, &size);
 
-    bool const ok = self.unserialize((void const*)data, size);
-    free((void*)data);
+    if (!self->unserialize((void const*)data, size)) {
+        return luaL_error(L, "error in %s", "unserialize");
+    }
 
-    lua_pushboolean(L, ok);
-    return 1;
+    return 0;
 }
 
 static int l_cheatSet(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
     lua_Integer const index = luaL_checkinteger(L, 2);
     bool const enabled = lua_toboolean(L, 3) != 0;
     char const* const code = luaL_checkstring(L, 4);
 
-    bool const ok = self.cheatSet(index, enabled, code);
+    if (!self->cheatSet(index, enabled, code)) {
+        return luaL_error(L, "error in %s", "cheatSet");
+    }
 
-    lua_pushboolean(L, ok);
-    return 1;
+    return 0;
 }
 
 static int l_getMemoryData(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
     lua_Integer const id = luaL_checkinteger(L, 2);
 
     size_t size = 0;
-    bool const ok1 = self.getMemorySize(id, &size);
 
-    if (!ok1) {
-        lua_pushboolean(L, 0);
-        return 1;
+    if (!self->getMemorySize(id, &size)) {
+        return luaL_error(L, "error in %s", "getMemorySize");
     }
 
     void* data = nullptr;
-    bool const ok2 = self.getMemoryData(id, &data);
 
-    if (!ok2) {
-        lua_pushboolean(L, 0);
-        return 1;
+    if (!self->getMemoryData(id, &data)) {
+        return luaL_error(L, "error in %s", "getMemoryData");
     }
 
-    lua_pushboolean(L, 1);
     lua_pushlstring(L, (char const*)data, size);
-    return 2;
+    return 1;
 }
 
 static int l_getMemorySize(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
     lua_Integer const id = luaL_checkinteger(L, 2);
 
     size_t size = 0;
-    bool const ok = self.getMemorySize(id, &size);
 
-    lua_pushboolean(L, ok);
-
-    if (ok) {
-        lua_pushinteger(L, size);
-        return 2;
+    if (!self->getMemorySize(id, &size)) {
+        return luaL_error(L, "error in %s", "getMemorySize");
     }
 
+    lua_pushinteger(L, size);
     return 1;
 }
 
 static int l_setControllerPortDevice(lua_State* const L) {
-    lrcpp::Frontend& self = lrcpp::Frontend::getInstance();
+    auto const self = check(L, 1);
     lua_Integer const port = luaL_checkinteger(L, 2);
     lua_Integer const device = luaL_checkinteger(L, 3);
 
-    bool const ok = self.setControllerPortDevice(port, device);
+    if (!self->setControllerPortDevice(port, device)) {
+        return luaL_error(L, "error in %s", "setControllerPortDevice");
+    }
 
-    lua_pushboolean(L, ok);
-    return 1;
+    return 0;
 }
 
 int lrcpp_push(lua_State* L, lrcpp::Frontend* frontend) {
-    Frontend** self = (Frontend**)lua_newuserdata(L, sizeof(Frontend*));
+    auto self = (lrcpp::Frontend**)lua_newuserdata(L, sizeof(lrcpp::Frontend*));
     *self = frontend;
 
     if (luaL_newmetatable(L, FRONTEND_MT)) {
