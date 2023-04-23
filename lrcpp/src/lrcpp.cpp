@@ -7,13 +7,13 @@
 
 #define FRONTEND_MT "lrcpp::Frontend"
 
-static lrcpp::Frontend* check(lua_State* const L, int const ndx) {
+lrcpp::Frontend* lrcpp_check(lua_State* const L, int const ndx) {
     auto const self = *(lrcpp::Frontend**)luaL_checkudata(L, ndx, FRONTEND_MT);
     return self;
 }
 
 static int l_loadGame(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
     bool ok = false;
 
     if (lua_isstring(L, 2)) {
@@ -41,7 +41,7 @@ static int l_loadGame(lua_State* const L) {
 }
 
 static int l_loadGameSpecial(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
     lua_Integer const game_type = luaL_checkinteger(L, 2);
 
     int const top = lua_gettop(L);
@@ -71,7 +71,7 @@ static int l_loadGameSpecial(lua_State* const L) {
 
 #define NO_ARG(S) \
     static int l_ ## S(lua_State* const L) { \
-        auto const self = check(L, 1); \
+        auto const self = lrcpp_check(L, 1); \
         if (!self->S()) return luaL_error(L, "error in %s", #S); \
         return 0; \
     }
@@ -82,7 +82,7 @@ NO_ARG(unloadGame)
 
 #define ARG_UNSIGNED_PTR(S) \
     static int l_ ## S(lua_State* const L) { \
-        auto const self = check(L, 1); \
+        auto const self = lrcpp_check(L, 1); \
         unsigned res = 0; \
         if (!self->S(&res)) return luaL_error(L, "error in %s", #S); \
         lua_pushinteger(L, res); \
@@ -94,7 +94,7 @@ NO_ARG(cheatReset)
 ARG_UNSIGNED_PTR(getRegion)
 
 static int l_getSystemInfo(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
 
     retro_system_info info = {};
 
@@ -112,7 +112,7 @@ static int l_getSystemInfo(lua_State* const L) {
 }
 
 static int l_getSystemAvInfo(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
 
     retro_system_av_info info = {};
 
@@ -133,7 +133,7 @@ static int l_getSystemAvInfo(lua_State* const L) {
 }
 
 static int l_serializeSize(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
 
     size_t size = 0;
 
@@ -146,7 +146,7 @@ static int l_serializeSize(lua_State* const L) {
 }
 
 static int l_serialize(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
 
     size_t size = 0;
 
@@ -170,7 +170,7 @@ static int l_serialize(lua_State* const L) {
 }
 
 static int l_unserialize(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
 
     size_t size = 0;
     char const* const data = luaL_checklstring(L, 2, &size);
@@ -183,7 +183,7 @@ static int l_unserialize(lua_State* const L) {
 }
 
 static int l_cheatSet(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
     lua_Integer const index = luaL_checkinteger(L, 2);
     bool const enabled = lua_toboolean(L, 3) != 0;
     char const* const code = luaL_checkstring(L, 4);
@@ -196,7 +196,7 @@ static int l_cheatSet(lua_State* const L) {
 }
 
 static int l_getMemoryData(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
     lua_Integer const id = luaL_checkinteger(L, 2);
 
     size_t size = 0;
@@ -216,7 +216,7 @@ static int l_getMemoryData(lua_State* const L) {
 }
 
 static int l_getMemorySize(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
     lua_Integer const id = luaL_checkinteger(L, 2);
 
     size_t size = 0;
@@ -230,7 +230,7 @@ static int l_getMemorySize(lua_State* const L) {
 }
 
 static int l_setControllerPortDevice(lua_State* const L) {
-    auto const self = check(L, 1);
+    auto const self = lrcpp_check(L, 1);
     lua_Integer const port = luaL_checkinteger(L, 2);
     lua_Integer const device = luaL_checkinteger(L, 3);
 
