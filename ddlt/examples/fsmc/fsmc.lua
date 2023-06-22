@@ -690,8 +690,8 @@ local function emit(fsm, path)
         if not state.stack then
             out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
 
-        if #state.transitions ~= 0 then
-            out:write(idn, idn, idn, 'switch (next) {\n')
+            if #state.transitions ~= 0 then
+                out:write(idn, idn, idn, 'switch (next) {\n')
 
                 local valid, sorted = {}, {}
 
@@ -700,19 +700,19 @@ local function emit(fsm, path)
                 end
 
                 for stateId in pairs(valid) do
-                sorted[#sorted + 1] = stateId
+                    sorted[#sorted + 1] = stateId
+                end
+
+                table.sort(sorted, function(id1, id2) return id1 < id2 end)
+
+                for _, stateId in ipairs(sorted) do
+                    out:write(idn, idn, idn, idn, 'case ', fsm.id, '_State_', stateId, ':\n')
+                end
+
+                out:write(idn, idn, idn, idn, idn, 'return 1;\n')
+                out:write(idn, idn, idn, idn, 'default: break;\n')
+                out:write(idn, idn, idn, '}\n')
             end
-
-            table.sort(sorted, function(id1, id2) return id1 < id2 end)
-
-            for _, stateId in ipairs(sorted) do
-                out:write(idn, idn, idn, idn, 'case ', fsm.id, '_State_', stateId, ':\n')
-            end
-
-            out:write(idn, idn, idn, idn, idn, 'return 1;\n')
-            out:write(idn, idn, idn, idn, 'default: break;\n')
-            out:write(idn, idn, idn, '}\n')
-        end
 
             out:write(idn, idn, idn, 'break;\n\n')
         end
@@ -886,7 +886,7 @@ local function emit(fsm, path)
                 end
             end
 
-            if transition2.type == 'state' then
+            if transition2.type == 'state' or transition2.type == 'pop' then
                 out:write(idn, idn, idn, 'local_after(self);\n')
                 out:write(idn, idn, idn, 'global_after(self);\n\n')
                 out:write(idn, idn, idn, 'PRINTF(\n')
