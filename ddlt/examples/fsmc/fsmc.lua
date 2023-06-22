@@ -511,7 +511,7 @@ local function validate(fsm, path)
                 transition.target = walk(fsm, state, transition.id)
             end
 
-            if not fsm.states[transition.target.id] then
+            if transition.type ~= 'pop' and not fsm.states[transition.target.id] then
                 fatal(path, transition.target.line, '"Unknown state "%s"', transition.target.id)
             end
         end
