@@ -45,8 +45,8 @@ local function getTokens(path, source, startLine)
         startline = startLine,
         file = path,
         language = 'cpp',
-        symbols = {'=>', '(', ')', ';', ','},
-        keywords = {'header', 'implementation', 'fsm', 'before', 'after'},
+        symbols = {'=>', '(', ')', ';', ',', ':'},
+        keywords = {'header', 'implementation', 'fsm', 'before', 'after', 'stack'},
         freeform = {{'{', '}'}}
     }
 
