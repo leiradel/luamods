@@ -425,7 +425,61 @@ end
 
 local function parseFsm(path)
     local parser = newParser(path)
-    return parser:parse()
+    local fsm = parser:parse()
+
+    local function clone(src, dest)
+        for k, v in pairs(src) do
+            if type(v) == 'table' then
+                dest[k] = clone(v, {})
+            else
+                dest[k] = v
+            end
+        end
+
+        return dest
+    end
+
+    for _, state in ipairs(fsm.states) do
+        if state.stack then
+            -- The stack state, add transitions to all the allowed states
+            for _, transition in ipairs(state.transitions) do
+                for _, state in ipairs(fsm.states) do
+                    if not state.stack then
+                        local add = false
+                        
+                        if not transition.allowed then
+                            add = true
+                        else
+                            for i = 1, #transition.allowed do
+                                if transition.allowed[i].id == state.id then
+                                    add = true
+                                    break
+                                end
+                            end
+                        end
+
+                        if transition.type == 'state' and transition.target.id == state.id then
+                            -- Do not add the transition to its own target state
+                            add = false
+                        end
+
+                        if add then
+                            local cloned = clone(transition, {})
+                            state.transitions[cloned.id] = cloned
+                            state.transitions[#state.transitions + 1] = cloned
+
+                            if cloned.type == 'pop' then
+                                -- Set the transition target
+                                cloned.target = {id = state.id, line = cloned.line}
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return fsm
 end
 
 local function validate(fsm, path)
