@@ -804,9 +804,7 @@ local function emit(fsm, path)
             end
         end
 
-        for _, state in ipairs(valid) do
-            local transition2 = state.transitions[transition.id]
-
+        local function dotransition(state, transition2)
             out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
             out:write(idn, idn, idn, 'if (!global_before(self)) {\n')
             out:write(idn, idn, idn, idn, 'PRINTF(\n')
@@ -886,6 +884,10 @@ local function emit(fsm, path)
 
             out:write(idn, idn, '}\n\n')
             out:write(idn, idn, 'break;\n\n')
+        end
+
+        for _, state in ipairs(valid) do
+                dotransition(state, state.transitions[transition.id])
         end
 
         out:write(idn, idn, 'default: break;\n')
