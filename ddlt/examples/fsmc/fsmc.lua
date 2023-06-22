@@ -823,6 +823,28 @@ local function emit(fsm, path)
             out:write(idn, idn, idn, idn, 'return 0;\n')
             out:write(idn, idn, idn, '}\n\n')
 
+            if transition2.type == 'pop' then
+                out:write(idn, idn, idn, 'if (self->sp == 0) {\n')
+                out:write(idn, idn, idn, idn, 'PRINTF(\n')
+                out:write(idn, idn, idn, idn, idn, 'self,\n')
+                out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Stack underflow while switching to %s",\n')
+                out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
+                out:write(idn, idn, idn, idn, ');\n\n')
+                out:write(idn, idn, idn, idn, 'return 0;\n')
+                out:write(idn, idn, idn, '}\n\n')
+            elseif transition2.type == 'state' then
+                if transition2.stack then
+                    out:write(idn, idn, idn, 'if (self->sp == (FSM_STACK - 1)) {\n}')
+                    out:write(idn, idn, idn, idn, 'PRINTF(\n')
+                    out:write(idn, idn, idn, idn, idn, 'self,\n')
+                    out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Stack overflow while switching to %s",\n')
+                    out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
+                    out:write(idn, idn, idn, idn, ');\n\n')
+                    out:write(idn, idn, idn, idn, 'return 0;\n')
+                    out:write(idn, idn, idn, '}\n\n')
+                end
+            end
+            
             if transition2.precondition then
                 out:write('/*#line ', transition2.precondition.line, ' "', path, '"*/\n')
                 out:write(transition2.precondition.lexeme, '\n')
