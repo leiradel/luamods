@@ -1,28 +1,31 @@
 local ddlt = require 'ddlt'
 
-local function dump(t, i)
+local function dump(t, z, i)
+    z = z or {}
     i = i or ''
 
-    if type(t) == 'table' then
-        io.write(string.format('%s%s {\n', i, tostring(table)))
+    if z[t] then
+        io.write(string.format('%s"%s (recursive!)",\n', i, tostring(t)))
+        return
+    end
 
-        for k, v in pairs(t) do
-            io.write(string.format('%s  %s = ', i, tostring(k)))
+    z[t] = true
+    io.write(string.format('%s{\n', i))
 
-            if type(v) == 'table' then
-                io.write('\n')
-                dump(v, i .. '  ')
-            else
-                io.write(string.format('%s', tostring(v)))
-            end
+    for k, v in pairs(t) do
+        io.write(string.format('%s  "%s" = ', i, tostring(k)))
 
+        if type(v) == 'table' then
             io.write('\n')
+            dump(v, z, i .. '    ')
+        else
+            io.write(string.format('%q,', tostring(v)))
         end
 
-        io.write(string.format('%s}\n', i))
-    else
-        io.write(string.format('%s%s', i, tostring(t)))
+        io.write('\n')
     end
+
+    io.write(string.format('%s},\n', i))
 end
 
 local function fatal(path, line, format, ...)
