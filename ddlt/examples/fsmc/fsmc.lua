@@ -572,9 +572,11 @@ local function emit(fsm, path)
     out:write(fsm.id, '_State;\n\n')
 
     -- The FSM state
+    out:write('#define FSM_STACK 16\n\n')
     out:write('/* The FSM */\n')
     out:write('typedef struct {\n')
-    out:write(idn, fsm.id, '_State state;\n')
+    out:write(idn, fsm.id, '_State state[FSM_STACK];\n')
+    out:write(idn, 'int sp;\n\n');
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(idn, parameter.type, ' ', parameter.id, ';\n')
@@ -667,7 +669,8 @@ local function emit(fsm, path)
     end
 
     out:write(') {\n')
-    out:write(idn, 'self->state = ', fsm.id, '_State_', fsm.begin, ';\n\n')
+    out:write(idn, 'self->state[0] = ', fsm.id, '_State_', fsm.begin, ';\n')
+    out:write(idn, 'self->sp = 0;\n\n')
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(idn, 'self->', parameter.id, ' = ', parameter.id, ';\n')
@@ -677,11 +680,11 @@ local function emit(fsm, path)
 
     -- Query functions
     out:write(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self) {\n')
-    out:write(idn, 'return self->state;\n')
+    out:write(idn, 'return self->state[self->sp];\n')
     out:write('}\n\n')
 
     out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next) {\n')
-    out:write(idn, 'switch (self->state) {\n')
+    out:write(idn, 'switch (self->state[self->sp]) {\n')
 
     for _, state in ipairs(fsm.states) do
         out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
@@ -732,7 +735,7 @@ local function emit(fsm, path)
 
     -- State-specific before events
     out:write('static int local_before(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, 'switch (self->state) {\n')
+    out:write(idn, 'switch (self->state[self->sp]) {\n')
 
     for _, state in ipairs(fsm.states) do
         if state.before then
@@ -762,7 +765,7 @@ local function emit(fsm, path)
 
     -- State-specific after events
     out:write('static void local_after(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, 'switch (self->state) {\n')
+    out:write(idn, 'switch (self->state[self->sp]) {\n')
 
     for _, state in ipairs(fsm.states) do
         if state.after then
@@ -787,7 +790,7 @@ local function emit(fsm, path)
         end
 
         out:write(') {\n')
-        out:write(idn, 'switch (self->state) {\n')
+        out:write(idn, 'switch (self->state[self->sp]) {\n')
 
         local valid, invalid = {}, {}
 
