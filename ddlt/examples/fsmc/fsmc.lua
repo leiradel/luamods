@@ -887,7 +887,9 @@ local function emit(fsm, path)
         end
 
         for _, state in ipairs(valid) do
+            if not state.stack then
                 dotransition(state, state.transitions[transition.id])
+            end
         end
 
         out:write(idn, idn, 'default: break;\n')
