@@ -563,7 +563,9 @@ local function emit(fsm, path)
     out:write('typedef enum {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, fsm.id, '_State_', state.id, ',\n')
+        if not state.stack then
+            out:write(idn, fsm.id, '_State_', state.id, ',\n')
+        end
     end
 
     out:write('}\n')
