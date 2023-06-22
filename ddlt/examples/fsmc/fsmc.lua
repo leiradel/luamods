@@ -687,7 +687,8 @@ local function emit(fsm, path)
     out:write(idn, 'switch (self->state[self->sp]) {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
+        if not state.stack then
+            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
 
         if #state.transitions ~= 0 then
             out:write(idn, idn, idn, 'switch (next) {\n')
@@ -713,7 +714,8 @@ local function emit(fsm, path)
             out:write(idn, idn, idn, '}\n')
         end
 
-        out:write(idn, idn, idn, 'break;\n\n')
+            out:write(idn, idn, idn, 'break;\n\n')
+        end
     end
 
     out:write(idn, idn, 'default: break;\n')
