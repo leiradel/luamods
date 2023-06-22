@@ -693,13 +693,13 @@ local function emit(fsm, path)
         if #state.transitions ~= 0 then
             out:write(idn, idn, idn, 'switch (next) {\n')
 
-            local valid, sorted = {}, {}
+                local valid, sorted = {}, {}
 
-            for _, newState in pairs(state.transitions) do
-                valid[newState.target.id] = true
-            end
+                for _, transition in pairs(state.transitions) do
+                    valid[transition.target.id] = true
+                end
 
-            for stateId in pairs(valid) do
+                for stateId in pairs(valid) do
                 sorted[#sorted + 1] = stateId
             end
 
