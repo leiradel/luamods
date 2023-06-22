@@ -183,7 +183,7 @@ local function newParser(path)
             -- Parse all the states in the fsm
             self:parseState(fsm)
 
-            while self:token() == '<id>' do
+            while self:token() == '<id>' or self:token() == 'stack' do
                 self:parseState(fsm)
             end
 
@@ -216,7 +216,13 @@ local function newParser(path)
 
         parseState = function(self, fsm)
             local state = {transitions = {}, id = self:lexeme(), line = self:line()}
-            self:match('<id>')
+
+            if self:token() == 'stack' then
+                self:match('stack')
+                state.stack = true
+            else
+                self:match('<id>')
+            end
 
             if fsm.states[state.id] then
                 self:error(state.line, 'duplicated state "%s" in "%s"', state.id, fsm.id)
@@ -224,8 +230,8 @@ local function newParser(path)
 
             fsm.states[state.id] = state
 
-            -- Set the first state as the initial state
-            if not fsm.begin then
+            -- Set the first non-stack state as the initial state
+            if not state.stack and not fsm.begin then
                 fsm.begin = state.id
             end
 
