@@ -259,9 +259,34 @@ local function newParser(path)
         end,
 
         parseTransition = function(self, fsm, state)
+            -- Get the list of allowed states for the transition
+            local allowed = {}
+
+            if self:token(2) ~= '(' then
+                -- We have a list of allowed states
+                if not state.stack then
+                    self:error(self:line(), 'allowed states list can only appear in transition in the "stack" state')
+                end
+
+                allowed[#allowed + 1] = {id = self:lexeme(), line = self:line()}
+                self:match('<id>')
+
+                while self:token() == ',' do
+                    self:match(',')
+                    allowed[#allowed + 1] = {id = self:lexeme(), line = self:line()}
+                    self:match('<id>')
+                end
+
+                self:match(':')
+            end
+
             -- Get the transition id
-            local transition = {id = self:lexeme(), line = self:line()}
+            local transition = {id = self:lexeme(), stack = state.stack, line = self:line()}
             self:match('<id>')
+
+            if #allowed ~= 0 then
+                transition.allowed = allowed
+            end
 
             if state.transitions[transition.id] then
                 self:error(transition.line, 'duplicated transition "%s" in "%s"', transition.id, state.id)
@@ -270,10 +295,28 @@ local function newParser(path)
             state.transitions[transition.id] = transition
             transition.parameters = self:parseParameters()
 
-            if self:token(3) ~= '(' then
+            if self:token() ~= '=>' then
+                -- It's a pop, check for a precondition for the transition
+                if not state.stack then
+                    self:error(self:line(), '"pop" transitions are only allowed in the "stack" state')
+                end
+
+                transition.type = 'pop'
+
+                if self:token() == '<freeform>' then
+                    transition.precondition = {
+                        line = self:line(),
+                        lexeme = self:lexeme():sub(2, -2):gsub('allow', 'return 1'):gsub('forbid', 'return 0')
+                    }
+
+                    self:match('<freeform>')
+                else
+                    self:match(';')
+                end
+            elseif self:token(3) ~= '(' then
                 -- It's a direct transition to another state
-                self:match('=>')
                 transition.type = 'state'
+                self:match('=>')
                 transition.target = {id = self:lexeme(), line = self:line()}
                 self:match('<id>')
 
@@ -290,6 +333,10 @@ local function newParser(path)
                 end
             else
                 -- It's a sequence of transitions that'll arrive on another state
+                if state.stack then
+                    self:error(self:line(), 'sequenced transitions are not allowed in the "stack" state')
+                end
+
                 transition.type = 'sequence'
 
                 local steps = {}
