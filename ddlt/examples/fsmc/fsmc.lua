@@ -850,8 +850,14 @@ local function emit(fsm, path)
                 out:write(transition2.precondition.lexeme, '\n')
             end
 
-            if transition2.type == 'state' then
-                out:write(idn, idn, idn, 'self->state = ', fsm.id, '_State_', transition2.target.id, ';\n\n')
+            if transition2.type == 'pop' then
+                out:write(idn, idn, idn, 'self->sp--;\n\n')
+            elseif transition2.type == 'state' then
+                if transition2.stack then
+                    out:write(idn, idn, idn, 'self->sp++;\n')
+                end
+
+                out:write(idn, idn, idn, 'self->state[self->pc] = ', fsm.id, '_State_', transition2.target.id, ';\n\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
                     local list = {'self'}
