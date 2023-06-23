@@ -519,10 +519,29 @@ local function validate(fsm, path)
 end
 
 local function emit(fsm, path)
-    local idn = '    '
-
     local dir, name = ddlt.split(path)
     path = ddlt.realpath(path)
+
+    -- Create the writer object
+    local out = {
+        i = 0,
+
+        indent = function(self)
+            self.i = self.i + 1
+        end,
+
+        unindent = function(self)
+            self.i = self.i - 1
+        end
+    }
+
+    out = setmetatable(out, {
+        __call = function(self, ...)
+            self.file:write(('    '):rep(self.i))
+            self.file:write(...)
+            self.file:write('\n')
+        end
+    })
 
     -- Collect and order all transitions
     local allTransitions = {}
@@ -543,159 +562,194 @@ local function emit(fsm, path)
     table.sort(allTransitions, function(e1, e2) return e1.id < e2.id end)
 
     -- Emit the header
-    local out = assert(io.open(ddlt.join(dir, name, 'h'), 'w'))
+    out.file = assert(io.open(ddlt.join(dir, name, 'h'), 'w'))
     local guard = string.format('%s_H__', name:upper())
 
-    out:write('#ifndef ', guard, '\n')
-    out:write('#define ', guard, '\n\n')
-    out:write('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n\n')
+    out('#ifndef ', guard)
+    out('#define ', guard, '\n')
+    out('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n')
 
-    out:write('#include <stdarg.h>\n\n')
+    out('#include <stdarg.h>\n')
 
     -- Header free form code
     if fsm.header then
-        out:write('/*#line ', fsm.header.line, ' "', path, '"*/\n')
-        out:write(fsm.header.lexeme, '\n\n')
+        out(fsm.header.lexeme, '\n')
     end
 
     -- The states enumeration
-    out:write('/* FSM states */\n')
-    out:write('typedef enum {\n')
+    out('/* FSM states */')
+    out('typedef enum {')
+    out:indent()
 
     for _, state in ipairs(fsm.states) do
         if not state.stack then
-            out:write(idn, fsm.id, '_State_', state.id, ',\n')
+            out(fsm.id, '_State_', state.id, ',')
         end
     end
 
-    out:write('}\n')
-    out:write(fsm.id, '_State;\n\n')
+    out:unindent()
+    out('}')
+    out(fsm.id, '_State;\n')
 
     -- The FSM state
-    out:write('#define FSM_STACK 16\n\n')
-    out:write('/* The FSM */\n')
-    out:write('typedef struct {\n')
-    out:write(idn, fsm.id, '_State state[FSM_STACK];\n')
-    out:write(idn, 'int sp;\n\n');
+    out('#define FSM_STACK 16\n')
+    out('/* The FSM */')
+    out('typedef struct {')
+    out:indent()
+
+    out(fsm.id, '_State state[FSM_STACK];')
+    out('int sp;\n');
 
     for _, parameter in ipairs(fsm.parameters) do
-        out:write(idn, parameter.type, ' ', parameter.id, ';\n')
+        out(parameter.type, ' ', parameter.id, ';')
     end
     
-    out:write('\n')
-    out:write('#ifdef DEBUG_FSM\n')
-    out:write(idn, '/* Set those after calling ', fsm.id, '_Init when DEBUG_FSM is defined */\n')
-    out:write(idn, 'void (*vprintf)(void* const ud, char const* const fmt, va_list args);\n')
-    out:write(idn, 'void* vprintf_ud;\n')
-    out:write('#endif\n')
-    out:write('}\n')
-    out:write(fsm.id, '_Context;\n\n')
+    out('')
+    out:unindent()
+    out('#ifdef DEBUG_FSM')
+    out:indent()
+
+    out('/* Set those after calling ', fsm.id, '_Init when DEBUG_FSM is defined */')
+    out('void (*vprintf)(void* const ud, char const* const fmt, va_list args);')
+    out('void* vprintf_ud;')
+
+    out:unindent()
+    out('#endif')
+    out('}')
+    out(fsm.id, '_Context;\n')
 
     -- The initialization function
-    out:write('/* Initialization */\n')
-    out:write('void ', fsm.id, '_Init(', fsm.id, '_Context* const self')
+    out('/* Initialization */')
+    do
+        local str = {'void ', fsm.id, '_Init(', fsm.id, '_Context* const self'}
 
-    for _, parameter in ipairs(fsm.parameters) do
-        out:write(', ', parameter.type, ' const ', parameter.id)
-    end
-
-    out:write(');\n\n')
-
-    -- Query functions
-    out:write('/* Query */\n')
-    out:write(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self);\n')
-    out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next);\n\n')
-
-    -- Transitions
-    out:write('/* Transitions */\n')
-
-    for _, transition in ipairs(allTransitions) do
-        out:write('int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self')
-
-        for _, parameter in ipairs(transition.parameters) do
-            out:write(', ', parameter.type, ' ', parameter.id)
+        for _, parameter in ipairs(fsm.parameters) do
+            str[#str + 1] = ', '
+            str[#str + 1] = parameter.type
+            str[#str + 1] = ' const '
+            str[#str + 1] = parameter.id
         end
 
-        out:write(');\n')
+        out(table.concat(str, ''), ');\n')
     end
 
-    out:write('\n')
+    -- Query functions
+    out('/* Query */')
+    out(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self);')
+    out('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next);\n')
+
+    -- Transitions
+    out('/* Transitions */')
+
+    for _, transition in ipairs(allTransitions) do
+        local str = {'int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self'}
+
+        for _, parameter in ipairs(transition.parameters) do
+            str[#str + 1] = ', '
+            str[#str + 1] = parameter.type
+            str[#str + 1] = ' const '
+            str[#str + 1] = parameter.id
+        end
+
+        out(table.concat(str, ''), ');')
+    end
+
+    out('')
 
     -- Debug
-    out:write('/* Debug */\n')
-    out:write('#ifdef DEBUG_FSM\n')
-    out:write('char const* ', fsm.id, '_StateName(', fsm.id, '_State const state);\n')
-    out:write('#endif\n\n')
+    out('/* Debug */')
+    out('#ifdef DEBUG_FSM')
+    out('char const* ', fsm.id, '_StateName(', fsm.id, '_State const state);')
+    out('#endif\n')
 
     -- Finish up
-    out:write('#endif /* ', guard, ' */\n')
-    out:close()
+    out('#endif /* ', guard, ' */')
+    out.file:close()
 
     -- Emit the code
-    local out = assert(io.open(ddlt.join(dir, name, 'c'), 'w'))
+    out.file = assert(io.open(ddlt.join(dir, name, 'c'), 'w'))
 
     -- Include the necessary headers
-    out:write('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n\n')
-    out:write('#include "', name, '.h"\n\n')
-    out:write('#include <stddef.h>\n\n')
+    out('/* Generated with FSM compiler: https://github.com/leiradel/luamods/ddlt */\n')
+    out('#include "', name, '.h"\n')
+    out('#include <stddef.h>\n')
 
     -- Implementation free form code
     if fsm.implementation then
-        out:write('/*#line ', fsm.implementation.line, ' "', path, '"*/\n')
-        out:write(fsm.implementation.lexeme, '\n\n')
+        out(fsm.implementation.lexeme, '\n')
     end
 
     -- Helper printf-like function
-    out:write('#ifdef DEBUG_FSM\n')
-    out:write('static void fsmprintf(', fsm.id, '_Context* const self, const char* fmt, ...) {\n')
-    out:write(idn, 'if (self->vprintf != NULL) {\n')
-    out:write(idn, idn, 'va_list args;\n')
-    out:write(idn, idn, 'va_start(args, fmt);\n')
-    out:write(idn, idn, 'self->vprintf(self->vprintf_ud, fmt, args);\n');
-    out:write(idn, idn, 'va_end(args);\n')
-    out:write(idn, '}\n')
-    out:write('}\n\n')
-    out:write('#define PRINTF(...) do { fsmprintf(__VA_ARGS__); } while (0)\n')
-    out:write('#else\n')
-    out:write('#define PRINTF(...) do {} while (0)\n')
-    out:write('#endif\n\n')
+    out('#ifdef DEBUG_FSM\n')
+    out('static void fsmprintf(', fsm.id, '_Context* const self, const char* fmt, ...) {')
+    out:indent()
+    out('if (self->vprintf != NULL) {')
+    out:indent()
+    out('va_list args;')
+    out('va_start(args, fmt);')
+    out('self->vprintf(self->vprintf_ud, fmt, args);');
+    out('va_end(args);')
+    out:unindent()
+    out('}')
+    out:unindent()
+    out('}\n')
+
+    out('#define PRINTF(...) do { fsmprintf(__VA_ARGS__); } while (0)')
+    out('#else')
+    out('#define PRINTF(...) do {} while (0)')
+    out('#endif\n')
 
     -- The initialization function
-    out:write('/* Initialization */\n')
-    out:write('void ', fsm.id, '_Init(', fsm.id, '_Context* const self')
+    out('/* Initialization */')
 
-    for _, parameter in ipairs(fsm.parameters) do
-        out:write(', ', parameter.type, ' const ', parameter.id)
+    do
+        local str = {'void ', fsm.id, '_Init(', fsm.id, '_Context* const self'}
+
+        for _, parameter in ipairs(fsm.parameters) do
+            str[#str + 1] = ', '
+            str[#str + 1] = parameter.type
+            str[#str + 1] = ' const '
+            str[#str + 1] = parameter.id
+        end
+
+        out(table.concat(str, ''), ') {')
     end
 
-    out:write(') {\n')
-    out:write(idn, 'self->state[0] = ', fsm.id, '_State_', fsm.begin, ';\n')
-    out:write(idn, 'self->sp = 0;\n\n')
+    out:indent()
+    out('self->state[0] = ', fsm.id, '_State_', fsm.begin, ';')
+    out('self->sp = 0;\n')
 
     for _, parameter in ipairs(fsm.parameters) do
-        out:write(idn, 'self->', parameter.id, ' = ', parameter.id, ';\n')
+        out('self->', parameter.id, ' = ', parameter.id, ';')
     end
 
-    out:write('}\n\n')
+    out:unindent()
+    out('}\n')
 
     -- Query functions
-    out:write(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self) {\n')
-    out:write(idn, 'return self->state[self->sp];\n')
-    out:write('}\n\n')
+    out(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self) {')
+    out:indent()
+    out('return self->state[self->sp];')
+    out:unindent()
+    out('}\n')
 
-    out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next) {\n')
-    out:write(idn, 'switch (self->state[self->sp]) {\n')
+    out('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next) {')
+    out:indent()
+    out('switch (self->state[self->sp]) {')
+    out:indent()
 
     for _, state in ipairs(fsm.states) do
         if not state.stack then
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
+            out('case ', fsm.id, '_State_', state.id, ':')
+            out:indent()
 
             if #state.transitions ~= 0 then
-                out:write(idn, idn, idn, 'switch (next) {\n')
+                out('switch (next) {')
+                out:indent()
 
                 local valid, sorted = {}, {}
 
-                for _, transition in pairs(state.transitions) do
+                for _, transition in ipairs(state.transitions) do
                     valid[transition.target.id] = true
                 end
 
@@ -706,93 +760,130 @@ local function emit(fsm, path)
                 table.sort(sorted, function(id1, id2) return id1 < id2 end)
 
                 for _, stateId in ipairs(sorted) do
-                    out:write(idn, idn, idn, idn, 'case ', fsm.id, '_State_', stateId, ':\n')
+                    out('case ', fsm.id, '_State_', stateId, ':')
                 end
 
-                out:write(idn, idn, idn, idn, idn, 'return 1;\n')
-                out:write(idn, idn, idn, idn, 'default: break;\n')
-                out:write(idn, idn, idn, '}\n')
+                out:indent()
+                out('return 1;')
+                out:unindent()
+
+                out('default: break;')
+
+                out:unindent()
+                out('}')
             end
 
-            out:write(idn, idn, idn, 'break;\n\n')
+            out('break;\n')
+            out:unindent()
         end
     end
 
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n\n')
-    out:write(idn, 'return 0;\n')
-    out:write('}\n\n')
+    out('default: break;')
+    out:unindent()
+    out('}\n')
+    out('return 0;')
+
+    out:unindent()
+    out('}\n')
 
     -- Global before event
-    out:write('static int global_before(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, '(void)self;\n')
+    out('static int global_before(', fsm.id, '_Context* const self) {')
+    out:indent()
+    out('(void)self;')
 
     if fsm.before then
-        out:write('/*#line ', fsm.before.line, ' "', path, '"*/\n')
-        out:write(fsm.before.lexeme, '\n')
+        out(fsm.before.lexeme)
     end
 
-    out:write(idn, 'return 1;\n')
-    out:write('}\n\n')
+    out('return 1;')
+
+    out:unindent()
+    out('}\n')
 
     -- State-specific before events
-    out:write('static int local_before(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, 'switch (self->state[self->sp]) {\n')
+    out('static int local_before(', fsm.id, '_Context* const self) {')
+    out:indent()
+
+    out('switch (self->state[self->sp]) {')
+    out:indent()
 
     for _, state in ipairs(fsm.states) do
         if state.before then
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-            out:write('/*#line ', state.before.line, ' "', path, '"*/\n')
-            out:write(state.before.lexeme, '\n')
-            out:write(idn, idn, '}\n')
-            out:write(idn, idn, 'break;\n');
+            out('case ', fsm.id, '_State_', state.id, ': {')
+            out:indent()
+            out(state.before.lexeme)
+            out:unindent()
+            out('}')
+            out('break;');
         end
     end
 
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n\n')
-    out:write(idn, 'return 1;\n')
-    out:write('}\n\n')
+    out('default: break;')
+
+    out:unindent()
+    out('}\n')
+    out('return 1;')
+
+    out:unindent()
+    out('}\n')
 
     -- Global after event
-    out:write('static void global_after(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, '(void)self;\n')
+    out('static void global_after(', fsm.id, '_Context* const self) {')
+    out:indent()
+
+    out('(void)self;')
 
     if fsm.after then
-        out:write('/*#line ', fsm.after.line, ' "', path, '"*/\n')
-        out:write(fsm.after.lexeme, '\n')
+        out(fsm.after.lexeme, '\n')
     end
 
-    out:write('}\n\n')
+    out:unindent()
+    out('}\n')
 
     -- State-specific after events
-    out:write('static void local_after(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, 'switch (self->state[self->sp]) {\n')
+    out('static void local_after(', fsm.id, '_Context* const self) {')
+    out:indent()
+
+    out('switch (self->state[self->sp]) {')
+    out:indent()
 
     for _, state in ipairs(fsm.states) do
         if state.after then
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-            out:write('/*#line ', state.after.line, ' "', path, '"*/\n')
-            out:write(state.after.lexeme, '\n')
-            out:write(idn, idn, '}\n')
-            out:write(idn, idn, 'break;\n');
+            out('case ', fsm.id, '_State_', state.id, ': {')
+            out:indent()
+            out(state.after.lexeme)
+            out:unindent()
+            out('}')
+            out('break;');
         end
     end
 
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n')
-    out:write('}\n\n')
+    out('default: break;')
+
+    out:unindent()
+    out('}')
+
+    out:unindent()
+    out('}\n')
 
     -- Transitions
     for _, transition in ipairs(allTransitions) do
-        out:write('int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self')
+        do
+            local str = {'int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self'}
 
-        for _, parameter in ipairs(transition.parameters) do
-            out:write(', ', parameter.type, ' ', parameter.id)
+            for _, parameter in ipairs(transition.parameters) do
+                str[#str + 1] = ', '
+                str[#str + 1] = parameter.type
+                str[#str + 1] = ' const '
+                str[#str + 1] = parameter.id
+            end
+
+            out(table.concat(str, ''), ') {')
         end
 
-        out:write(') {\n')
-        out:write(idn, 'switch (self->state[self->sp]) {\n')
+        out:indent()
+        out('switch (self->state[self->sp]) {')
+        out:indent()
 
         local valid, invalid = {}, {}
 
@@ -805,59 +896,61 @@ local function emit(fsm, path)
         end
 
         local function dotransition(state, transition2)
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-            out:write(idn, idn, idn, 'if (!global_before(self)) {\n')
-            out:write(idn, idn, idn, idn, 'PRINTF(\n')
-            out:write(idn, idn, idn, idn, idn, 'self,\n')
-            out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed global precondition while switching to %s",\n')
-            out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
-            out:write(idn, idn, idn, idn, ');\n\n')
-            out:write(idn, idn, idn, idn, 'return 0;\n')
-            out:write(idn, idn, idn, '}\n\n')
-            out:write(idn, idn, idn, 'if (!local_before(self)) {\n')
-            out:write(idn, idn, idn, idn, 'PRINTF(\n')
-            out:write(idn, idn, idn, idn, idn, 'self,\n')
-            out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed state precondition while switching to %s",\n')
-            out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
-            out:write(idn, idn, idn, idn, ');\n\n')
-            out:write(idn, idn, idn, idn, 'return 0;\n')
-            out:write(idn, idn, idn, '}\n\n')
+            out('case ', fsm.id, '_State_', state.id, ': {')
+            out:indent()
+
+            out('if (!global_before(self)) {')
+            out:indent()
+
+            out('PRINTF(self, "FSM %s:%u Failed global precondition while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+            out('return 0;')
+
+            out:unindent()
+            out('}\n')
+
+            out('if (!local_before(self)) {')
+            out:indent()
+
+            out('PRINTF(self, "FSM %s:%u Failed state precondition while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+            out('return 0;')
+
+            out:unindent()
+            out('}\n')
 
             if transition2.type == 'pop' then
-                out:write(idn, idn, idn, 'if (self->sp == 0) {\n')
-                out:write(idn, idn, idn, idn, 'PRINTF(\n')
-                out:write(idn, idn, idn, idn, idn, 'self,\n')
-                out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Stack underflow while switching to %s",\n')
-                out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
-                out:write(idn, idn, idn, idn, ');\n\n')
-                out:write(idn, idn, idn, idn, 'return 0;\n')
-                out:write(idn, idn, idn, '}\n\n')
+                out('if (self->sp == 0) {')
+                out:indent()
+
+                out('PRINTF(self, "FSM %s:%u Stack underflow while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+                out('return 0;')
+
+                out:unindent()
+                out('}\n')
             elseif transition2.type == 'state' then
                 if transition2.stack then
-                    out:write(idn, idn, idn, 'if (self->sp == (FSM_STACK - 1)) {\n}')
-                    out:write(idn, idn, idn, idn, 'PRINTF(\n')
-                    out:write(idn, idn, idn, idn, idn, 'self,\n')
-                    out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Stack overflow while switching to %s",\n')
-                    out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
-                    out:write(idn, idn, idn, idn, ');\n\n')
-                    out:write(idn, idn, idn, idn, 'return 0;\n')
-                    out:write(idn, idn, idn, '}\n\n')
+                    out('if (self->sp == (FSM_STACK - 1)) {')
+                    out:indent()
+
+                    out('PRINTF(self, "FSM %s:%u Stack overflow while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+                    out('return 0;')
+
+                    out:unindent()
+                    out('}\n')
                 end
             end
             
             if transition2.precondition then
-                out:write('/*#line ', transition2.precondition.line, ' "', path, '"*/\n')
-                out:write(transition2.precondition.lexeme, '\n')
+                out(transition2.precondition.lexeme, '\n')
             end
 
             if transition2.type == 'pop' then
-                out:write(idn, idn, idn, 'self->sp--;\n\n')
+                out('self->sp--;\n')
             elseif transition2.type == 'state' then
                 if transition2.stack then
-                    out:write(idn, idn, idn, 'self->sp++;\n')
+                    out('self->sp++;')
                 end
 
-                out:write(idn, idn, idn, 'self->state[self->pc] = ', fsm.id, '_State_', transition2.target.id, ';\n\n')
+                out('self->state[self->sp] = ', fsm.id, '_State_', transition2.target.id, ';\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
                     local list = {'self'}
@@ -871,47 +964,49 @@ local function emit(fsm, path)
 
                 if #transition2.steps == 1 then
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_Transition_', transition2.steps[1].id, '(', args, ');\n')
+                    out('const int ok__ = ', fsm.id, '_Transition_', transition2.steps[1].id, '(', args, ');')
                 else
                     local args = arguments(transition2.steps[1].arguments)
-                    out:write(idn, idn, idn, 'const int ok__ = ', fsm.id, '_Transition_', transition2.steps[1].id, '(', args, ') &&\n')
+                    out('const int ok__ = ', fsm.id, '_Transition_', transition2.steps[1].id, '(', args, ') &&')
 
                     for i = 2, #transition2.steps do
                         local args = arguments(transition2.steps[i].arguments)
                         local eol = i == #transition2.steps and ';' or ' &&'
-                        out:write(idn, idn, idn, '                 ', fsm.id, '_Transition_', transition2.steps[i].id, '(', args, ')', eol, '\n')
+                        out('                 ', fsm.id, '_Transition_', transition2.steps[i].id, '(', args, ')', eol)
                     end
 
-                    out:write('\n')
+                    out('')
                 end
             end
 
             if transition2.type == 'state' or transition2.type == 'pop' then
-                out:write(idn, idn, idn, 'local_after(self);\n')
-                out:write(idn, idn, idn, 'global_after(self);\n\n')
-                out:write(idn, idn, idn, 'PRINTF(\n')
-                out:write(idn, idn, idn, idn, 'self,\n')
-                out:write(idn, idn, idn, idn, '"FSM %s:%u Switched to %s",\n')
-                out:write(idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
-                out:write(idn, idn, idn, ');\n\n')
-                out:write(idn, idn, idn, 'return 1;\n')
+                out('local_after(self);')
+                out('global_after(self);\n')
+                out('PRINTF(self, "FSM %s:%u Switched to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+                out('return 1;\n')
             elseif transition2.type == 'sequence' then
-                out:write(idn, idn, idn, 'if (ok__) {\n')
-                out:write(idn, idn, idn, idn, 'local_after(self);\n')
-                out:write(idn, idn, idn, idn, 'global_after(self);\n\n')
-                out:write(idn, idn, idn, '}\n')
-                out:write(idn, idn, idn, 'else {\n')
-                out:write(idn, idn, idn, idn, 'PRINTF(\n')
-                out:write(idn, idn, idn, idn, idn, 'self,\n')
-                out:write(idn, idn, idn, idn, idn, '"FSM %s:%u Failed to switch to %s",\n');
-                out:write(idn, idn, idn, idn, idn, '__FILE__, __LINE__, "', transition2.target.id, '"\n')
-                out:write(idn, idn, idn, idn, ');\n')
-                out:write(idn, idn, idn, '}\n\n')
-                out:write(idn, idn, idn, 'return ok__;\n')
+                out('if (ok__) {')
+                out:indent()
+
+                out('local_after(self);')
+                out('global_after(self);')
+
+                out:unindent()
+                out('}')
+
+                out('else {')
+                out:indent()
+
+                out('PRINTF(self, "FSM %s:%u Failed to switch to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+                
+                out:unindent()
+                out('}\n')
+                out('return ok__;')
             end
 
-            out:write(idn, idn, '}\n\n')
-            out:write(idn, idn, 'break;\n\n')
+            out:unindent()
+            out('}\n')
+            out('break;\n')
         end
 
         for _, state in ipairs(valid) do
@@ -920,51 +1015,71 @@ local function emit(fsm, path)
             end
         end
 
-        out:write(idn, idn, 'default: break;\n')
-        out:write(idn, '}\n\n')
-        out:write(idn, 'return 0;\n')
-        out:write('}\n\n')
+        out('default: break;')
+
+        out:unindent()
+        out('}\n')
+        out('return 0;')
+
+        out:unindent()
+        out('}\n')
     end
 
     -- State name
-    out:write('#ifdef DEBUG_FSM\n')
-    out:write('const char* ', fsm.id, '_StateName(', fsm.id, '_State const state) {\n')
-    out:write(idn, 'switch (state) {\n')
+    out('#ifdef DEBUG_FSM')
+    out('const char* ', fsm.id, '_StateName(', fsm.id, '_State const state) {')
+    out:indent()
+
+    out('switch (state) {')
+    out:indent()
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': return "', state.id, '";\n')
+        if not state.stack then
+            out('case ', fsm.id, '_State_', state.id, ': return "', state.id, '";')
+        end
     end
 
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n\n')
-    out:write(idn, 'return "unknown state";\n')
-    out:write('}\n')
-    out:write('#endif\n')
+    out('default: break;')
 
-    out:close()
+    out:unindent()
+    out('}\n')
+
+    out('return "unknown state";')
+
+    out:unindent()
+    out('}')
+    out('#endif')
+
+    out.file:close()
 
     -- Emit a Graphviz file
-    local out = assert(io.open(ddlt.join(dir, name, 'dot'), 'w'))
+    out.file = assert(io.open(ddlt.join(dir, name, 'dot'), 'w'))
 
-    out:write('// Generated with FSM compiler, https://github.com/leiradel/luamods/ddlt\n\n')
-    out:write('digraph ', fsm.id, ' {\n')
+    out('// Generated with FSM compiler, https://github.com/leiradel/luamods/ddlt\n')
+    out('digraph ', fsm.id, ' {')
+    out:indent()
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, state.id, ' [label="', state.id, '"];\n')
+        if not state.stack then
+            out(state.id, ' [label="', state.id, '"];')
+        end
     end
 
-    out:write('\n')
+    out('')
 
     for _, state in ipairs(fsm.states) do
-        for _, transition in ipairs(state.transitions) do
-            if transition.type == 'state' then
-                out:write(idn, state.id, ' -> ', transition.target.id, ' [label="', transition.id, '"];\n')
+        if not state.stack then
+            for _, transition in ipairs(state.transitions) do
+                if transition.type == 'state' or transition.type == 'pop' then
+                    out(state.id, ' -> ', transition.target.id, ' [label="', transition.id, '"];')
+                end
             end
         end
     end
 
-    out:write('}\n')
-    out:close()
+    out:unindent()
+    out('}')
+    out.file:close()
 end
 
 if #arg ~= 1 then
