@@ -36,6 +36,10 @@ local function fatal(path, line, format, ...)
     os.exit(1)
 end
 
+local function log(...)
+    io.stderr:write(string.format(...))
+end
+
 -------------------------------------------------------------------------------
 -- Tokenizes source code
 -------------------------------------------------------------------------------
@@ -190,27 +194,6 @@ local function newParser(path)
             self:match('}')
             self:match('<eof>')
 
-            -- Sort states and transitions by id to allow for better git diffs
-            local states = {}
-
-            for _, state in pairs(fsm.states) do
-                states[#states + 1] = state
-                states[state.id] = state
-
-                local transitions = {}
-
-                for _, transition in pairs(state.transitions) do
-                    transitions[#transitions + 1] = transition
-                    transitions[transition.id] = transition
-                end
-
-                table.sort(transitions, function(e1, e2) return e1.id < e2.id end)
-                state.transitions = transitions
-            end
-
-            table.sort(states, function(e1, e2) return e1.id < e2.id end)
-            fsm.states = states
-
             return fsm
         end,
 
@@ -268,23 +251,36 @@ local function newParser(path)
                     self:error(self:line(), 'allowed states list can only appear in transition in the "stack" state')
                 end
 
-                allowed[#allowed + 1] = {id = self:lexeme(), line = self:line()}
+                local id, line = self:lexeme(), self:line()
                 self:match('<id>')
+
+                if allowed[id] then
+                    self:error(self:line(), 'duplicated state "%s" in allowed states list', id)
+                end
+
+                allowed[id] = {id = id, line = self:line()}
 
                 while self:token() == ',' do
                     self:match(',')
-                    allowed[#allowed + 1] = {id = self:lexeme(), line = self:line()}
+
+                    local id, line = self:lexeme(), self:line()
                     self:match('<id>')
+    
+                    if allowed[id] then
+                        self:error(self:line(), 'duplicated state "%s" in allowed states list', id)
+                    end
+    
+                    allowed[id] = {id = id, line = self:line()}
                 end
 
                 self:match(':')
             end
 
             -- Get the transition id
-            local transition = {id = self:lexeme(), stack = state.stack, line = self:line()}
+            local transition = {id = self:lexeme(), line = self:line()}
             self:match('<id>')
 
-            if #allowed ~= 0 then
+            if next(allowed) then
                 transition.allowed = allowed
             end
 
@@ -315,7 +311,7 @@ local function newParser(path)
                 end
             elseif self:token(3) ~= '(' then
                 -- It's a direct transition to another state
-                transition.type = 'state'
+                transition.type = state.stack and 'push' or 'state'
                 self:match('=>')
                 transition.target = {id = self:lexeme(), line = self:line()}
                 self:match('<id>')
@@ -427,74 +423,19 @@ local function parseFsm(path)
     local parser = newParser(path)
     local fsm = parser:parse()
 
-    local function clone(src, dest)
-        for k, v in pairs(src) do
-            if type(v) == 'table' then
-                dest[k] = clone(v, {})
-            else
-                dest[k] = v
-            end
-        end
-
-        return dest
-    end
-
-    for _, state in ipairs(fsm.states) do
-        if state.stack then
-            -- The stack state, add transitions to all the allowed states
-            for _, transition in ipairs(state.transitions) do
-                for _, state in ipairs(fsm.states) do
-                    if not state.stack then
-                        local add = false
-                        
-                        if not transition.allowed then
-                            add = true
-                        else
-                            for i = 1, #transition.allowed do
-                                if transition.allowed[i].id == state.id then
-                                    add = true
-                                    break
-                                end
-                            end
-                        end
-
-                        if transition.type == 'state' and transition.target.id == state.id then
-                            -- Do not add the transition to its own target state
-                            add = false
-                        end
-
-                        if add then
-                            local cloned = clone(transition, {})
-                            state.transitions[cloned.id] = cloned
-                            state.transitions[#state.transitions + 1] = cloned
-
-                            if cloned.type == 'pop' then
-                                -- Set the transition target
-                                cloned.target = {id = state.id, line = cloned.line}
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return fsm
-end
-
-local function validate(fsm, path)
+    -- Validate the FSM
     local function walk(fsm, state, id)
         local transition = state.transitions[id]
   
         if not transition then
-            fatal('', 0, '"Unknown transition "%s"', id)
+            fatal(path, 0, '"Unknown transition "%s"', id)
         end
   
         if transition.type == 'state' then
             state = fsm.states[transition.target.id]
   
             if not state then
-                fatal('', 0, '"Unknown state "%s"', transition.target.id)
+                fatal(path, transition.target.line, '"Unknown state "%s"', transition.target.id)
             end
         elseif transition.type == 'sequence' then
             for _, step in ipairs(transition.steps) do
@@ -507,15 +448,149 @@ local function validate(fsm, path)
   
     for id, state in pairs(fsm.states) do
         for id, transition in pairs(state.transitions) do
-            if transition.type == 'sequence' then
-                transition.target = walk(fsm, state, transition.id)
-            end
+            if state.stack then
+                -- Check that states in allowed lists exist
+                if transition.allowed then
+                    for _, allowed in pairs(transition.allowed) do
+                        if not fsm.states[allowed.id] then
+                            fatal(path, allowed.line, '"Unknown state "%s"', allowed.id)
+                        end
+                    end
+                end
 
-            if transition.type ~= 'pop' and not fsm.states[transition.target.id] then
-                fatal(path, transition.target.line, '"Unknown state "%s"', transition.target.id)
+                -- Each push transition must have a corresponding pop one where
+                -- the target state of the former appears in the allowed list
+                -- of exactly one of the later
+                if transition.type == 'push' then
+                    local found, pop = 0, nil
+
+                    for _, transition2 in pairs(state.transitions) do
+                        if transition2.type == 'pop' then
+                            if transition2.allowed and transition2.allowed[transition.target.id] then
+                                found = found + 1
+                                pop = transition2
+                            end
+                        end
+                    end
+
+                    if found == 0 then
+                        fatal(
+                            path, transition.line,
+                            'Target state "%s" does not appear in any allowed list of pop transitions',
+                            transition.target.id
+                        )
+                    elseif found > 1 then
+                        fatal(
+                            path, transition.line,
+                            'Target state "%s" appears in multiple allowed list of pop transitions',
+                            transition.target.id
+                        )
+                    end
+
+                    -- Save the pop transition in the push one to use below
+                    transition.pop = pop
+                end
+            else
+                -- Check that all intermediary transitions and states in
+                -- sequenced transitions exist
+                if transition.type == 'sequence' then
+                    transition.target = walk(fsm, state, transition.id)
+                end
+
+                -- Check that target states exist
+                if not fsm.states[transition.target.id] then
+                    fatal(path, transition.target.line, '"Unknown state "%s"', transition.target.id)
+                end
             end
         end
     end
+
+    -- Add stacked transitions to all allowed states
+    local function clone(src, dest)
+        for k, v in pairs(src) do
+            if type(v) == 'table' then
+                dest[k] = clone(v, {})
+            else
+                dest[k] = v
+            end
+        end
+
+        return dest
+    end
+
+    -- Build an array of states (iterating over fsm.states with pairs was
+    -- causing an weird bug)
+    local states = {}
+
+    for _, state in pairs(fsm.states) do
+        states[#states + 1] = state
+    end
+
+    local function processPush(push)
+        for _, state in ipairs(states) do
+            if not state.stack then
+                if push.target.id == state.id then
+                    -- Do not add the transition to its own target state
+                    log('    Transition target is this state, not adding\n')
+                    add = false
+                elseif push.allowed == nil or push.allowed[state.id] then
+                    -- No need to clone
+                    state.transitions[push.id] = push
+                    log('    Added transition %s (%s) to state %s\n', push.id, push.type, state.id)
+                end
+            end
+        end
+
+        -- Add the pop transition
+        local list = push.allowed or fsm.states
+
+        for id in pairs(list) do
+            if id ~= 'stack' and id ~= push.target.id then
+                -- The transition will be overridden over and over here, but we
+                -- only need one; the correct code to pop to the previous state
+                -- will be generated
+                local pop = clone(push.pop, {})
+                pop.target = {id = id, line = pop.line}
+                local state = fsm.states[push.target.id]
+                state.transitions[pop.id] = pop
+
+                log('    Added pop transition %s from %s to %s\n', pop.id, push.target.id, pop.target.id)
+            end
+        end
+    end
+
+    -- Process push transitions
+    for _, state in ipairs(states) do
+        if state.stack then
+            -- The stack state, add direct transitions to all the allowed states
+            for _, transition in pairs(state.transitions) do
+                if transition.type == 'push' then
+                    log('Adding push transition %s\n', transition.id)
+                    processPush(transition)
+                end
+            end
+        end
+    end
+
+    -- Sort states and transitions by id to allow for better git diffs
+    for _, state in ipairs(states) do
+        states[state.id] = state
+
+        local transitions = {}
+
+        for _, transition in pairs(state.transitions) do
+            transitions[#transitions + 1] = transition
+            transitions[transition.id] = transition
+        end
+
+        table.sort(transitions, function(e1, e2) return e1.id < e2.id end)
+        state.transitions = transitions
+    end
+
+    table.sort(states, function(e1, e2) return e1.id < e2.id end)
+    fsm.states = states
+
+    return fsm
 end
 
 local function emit(fsm, path)
@@ -551,9 +626,11 @@ local function emit(fsm, path)
 
         for _, state in ipairs(fsm.states) do
             for _, transition in ipairs(state.transitions) do
-                if not visited[transition.id] then
-                    visited[transition.id] = true
-                    allTransitions[#allTransitions + 1] = transition
+                if not state.stack or (state.stack and transition.type == 'pop') then
+                    if not visited[transition.id] then
+                        visited[transition.id] = true
+                        allTransitions[#allTransitions + 1] = transition
+                    end
                 end
             end
         end
@@ -740,24 +817,26 @@ local function emit(fsm, path)
 
     for _, state in ipairs(fsm.states) do
         if not state.stack then
-            out('case ', fsm.id, '_State_', state.id, ':')
-            out:indent()
+            local valid, sorted = {}, {}
 
-            if #state.transitions ~= 0 then
-                out('switch (next) {')
-                out:indent()
-
-                local valid, sorted = {}, {}
-
-                for _, transition in ipairs(state.transitions) do
+            for _, transition in ipairs(state.transitions) do
+                if transition.type ~= 'pop' then
                     valid[transition.target.id] = true
                 end
+            end
 
-                for stateId in pairs(valid) do
-                    sorted[#sorted + 1] = stateId
-                end
+            for stateId in pairs(valid) do
+                sorted[#sorted + 1] = stateId
+            end
 
-                table.sort(sorted, function(id1, id2) return id1 < id2 end)
+            table.sort(sorted, function(id1, id2) return id1 < id2 end)
+
+            if #sorted ~= 0 then
+                out('case ', fsm.id, '_State_', state.id, ':')
+                out:indent()
+    
+                out('switch (next) {')
+                out:indent()
 
                 for _, stateId in ipairs(sorted) do
                     out('case ', fsm.id, '_State_', stateId, ':')
@@ -771,10 +850,42 @@ local function emit(fsm, path)
 
                 out:unindent()
                 out('}')
+                out('break;\n')
+                out:unindent()
             end
+        else
+            for _, transition in ipairs(state.transitions) do
+                if transition.type == 'pop' then
+                    for _, allowed in pairs(transition.allowed) do
+                        out('case ', fsm.id, '_State_', allowed.id, ':')
+                        out:indent()
+            
+                        out('switch (next) {')
+                        out:indent()
 
-            out('break;\n')
-            out:unindent()
+                        for _, transition2 in ipairs(state.transitions) do
+                            if transition2.type == 'push' and transition2.target.id == allowed.id then
+                                local list = transition2.allowed or fsm.states
+
+                                for _, item in ipairs(list) do
+                                    if item.id ~= 'stack' then
+                                        out('case ', fsm.id, '_State_', item.id, ':')
+                                    end
+                                end
+
+                                out:indent()
+                                out('return 1;')
+                                out:unindent()
+                            end
+                        end
+
+                        out:unindent()
+                        out('}')
+                        out('break;\n')
+                        out:unindent()
+                    end
+                end
+            end
         end
     end
 
@@ -867,7 +978,20 @@ local function emit(fsm, path)
     out('}\n')
 
     -- Transitions
+    local function clone(src, dest)
+        for k, v in pairs(src) do
+            if type(v) == 'table' then
+                dest[k] = clone(v, {})
+            else
+                dest[k] = v
+            end
+        end
+
+        return dest
+    end
+
     for _, transition in ipairs(allTransitions) do
+        log('Generating code for transition %s (%s)\n', transition.id, transition.type)
         do
             local str = {'int ', fsm.id, '_Transition_', transition.id, '(', fsm.id, '_Context* const self'}
 
@@ -889,44 +1013,29 @@ local function emit(fsm, path)
 
         for _, state in ipairs(fsm.states) do
             if state.transitions[transition.id] then
+                log('    Transition is valid from state %s\n', state.id)
                 valid[#valid + 1] = state
             else
+                log('    Transition is NOT valid from state %s\n', state.id)
                 invalid[#invalid + 1] = state
             end
         end
 
         local function dotransition(state, transition2)
+            log('    Generating case for transition %s (%s) from state %s\n', transition2.id, transition2.type, state.id)
             out('case ', fsm.id, '_State_', state.id, ': {')
             out:indent()
-
-            out('if (!global_before(self)) {')
-            out:indent()
-
-            out('PRINTF(self, "FSM %s:%u Failed global precondition while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
-            out('return 0;')
-
-            out:unindent()
-            out('}\n')
-
-            out('if (!local_before(self)) {')
-            out:indent()
-
-            out('PRINTF(self, "FSM %s:%u Failed state precondition while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
-            out('return 0;')
-
-            out:unindent()
-            out('}\n')
 
             if transition2.type == 'pop' then
                 out('if (self->sp == 0) {')
                 out:indent()
 
-                out('PRINTF(self, "FSM %s:%u Stack underflow while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+                out('PRINTF(self, "FSM %s:%u Stack underflow while popping the state", __FILE__, __LINE__);')
                 out('return 0;')
 
                 out:unindent()
                 out('}\n')
-            elseif transition2.type == 'state' then
+            elseif transition2.type == 'push' then
                 if transition2.stack then
                     out('if (self->sp == (FSM_STACK - 1)) {')
                     out:indent()
@@ -939,17 +1048,44 @@ local function emit(fsm, path)
                 end
             end
             
+            out('if (!global_before(self)) {')
+            out:indent()
+
+            if transition2.type == 'pop' then
+                out('PRINTF(self, "FSM %s:%u Failed global precondition while switching to %s", __FILE__, __LINE__, ', fsm.id, '_StateName(self->state[self->sp - 1]));')
+            else
+                out('PRINTF(self, "FSM %s:%u Failed global precondition while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+            end
+
+            out('return 0;')
+
+            out:unindent()
+            out('}\n')
+
+            out('if (!local_before(self)) {')
+            out:indent()
+
+            if transition2.type == 'pop' then
+                out('PRINTF(self, "FSM %s:%u Failed global precondition while switching to %s", __FILE__, __LINE__, ', fsm.id, '_StateName(self->state[self->sp - 1]));')
+            else
+                out('PRINTF(self, "FSM %s:%u Failed state precondition while switching to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+            end
+
+            out('return 0;')
+
+            out:unindent()
+            out('}\n')
+
             if transition2.precondition then
                 out(transition2.precondition.lexeme, '\n')
             end
 
             if transition2.type == 'pop' then
                 out('self->sp--;\n')
+            elseif transition2.type == 'push' then
+                out('self->sp++;')
+                out('self->state[self->sp] = ', fsm.id, '_State_', transition2.target.id, ';\n')
             elseif transition2.type == 'state' then
-                if transition2.stack then
-                    out('self->sp++;')
-                end
-
                 out('self->state[self->sp] = ', fsm.id, '_State_', transition2.target.id, ';\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
@@ -982,7 +1118,13 @@ local function emit(fsm, path)
             if transition2.type == 'state' or transition2.type == 'pop' then
                 out('local_after(self);')
                 out('global_after(self);\n')
-                out('PRINTF(self, "FSM %s:%u Switched to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+
+                if transition2.type == 'pop' then
+                    out('PRINTF(self, "FSM %s:%u State popped to %s", __FILE__, __LINE__, ', fsm.id, '_StateName(self->state[self->sp]));')
+                else
+                    out('PRINTF(self, "FSM %s:%u Switched to %s", __FILE__, __LINE__, "', transition2.target.id, '");')
+                end
+
                 out('return 1;\n')
             elseif transition2.type == 'sequence' then
                 out('if (ok__) {')
@@ -1088,5 +1230,4 @@ if #arg ~= 1 then
 end
 
 local fsm = parseFsm(arg[1])
-validate(fsm, arg[1])
 emit(fsm, arg[1])
