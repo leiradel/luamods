@@ -620,20 +620,31 @@ local function emit(fsm, path)
 
     -- State-specific before events
     out:write('static int local_before(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, 'switch (self->state) {\n')
+    out:write(idn, '(void)self;\n')
+    local generate = false
 
     for _, state in ipairs(fsm.states) do
-        if state.before then
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-            out:write('/*#line ', state.before.line, ' "', path, '"*/\n')
-            out:write(state.before.lexeme, '\n')
-            out:write(idn, idn, '}\n')
-            out:write(idn, idn, 'break;\n');
-        end
+        generate = generate or state.before
     end
 
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n\n')
+    if generate then
+        out:write('\n')
+        out:write(idn, 'switch (self->state) {\n')
+
+        for _, state in ipairs(fsm.states) do
+            if state.before then
+                out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
+                out:write('/*#line ', state.before.line, ' "', path, '"*/\n')
+                out:write(state.before.lexeme, '\n')
+                out:write(idn, idn, '}\n')
+                out:write(idn, idn, 'break;\n');
+            end
+        end
+
+        out:write(idn, idn, 'default: break;\n')
+        out:write(idn, '}\n\n')
+    end
+
     out:write(idn, 'return 1;\n')
     out:write('}\n\n')
 
@@ -650,20 +661,31 @@ local function emit(fsm, path)
 
     -- State-specific after events
     out:write('static void local_after(', fsm.id, '_Context* const self) {\n')
-    out:write(idn, 'switch (self->state) {\n')
+    out:write(idn, '(void)self;\n')
+    local generate = false
 
     for _, state in ipairs(fsm.states) do
-        if state.after then
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-            out:write('/*#line ', state.after.line, ' "', path, '"*/\n')
-            out:write(state.after.lexeme, '\n')
-            out:write(idn, idn, '}\n')
-            out:write(idn, idn, 'break;\n');
-        end
+        generate = generate or state.after
     end
 
-    out:write(idn, idn, 'default: break;\n')
-    out:write(idn, '}\n')
+    if generate then
+        out:write('\n')
+        out:write(idn, 'switch (self->state) {\n')
+
+        for _, state in ipairs(fsm.states) do
+            if state.after then
+                out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
+                out:write('/*#line ', state.after.line, ' "', path, '"*/\n')
+                out:write(state.after.lexeme, '\n')
+                out:write(idn, idn, '}\n')
+                out:write(idn, idn, 'break;\n');
+            end
+        end
+
+        out:write(idn, idn, 'default: break;\n')
+        out:write(idn, '}\n')
+    end
+
     out:write('}\n\n')
 
     -- Transitions

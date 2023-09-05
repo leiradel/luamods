@@ -349,6 +349,8 @@ print(table.concat(source, ''))
 
 ## Changelog
 
+* 5.1.1
+  * Don't generate empty `switch` statements in `fsmc.lua`
 * 5.1.0
   * Added the `index` field to the table returned by `next`
 * 5.0.0
