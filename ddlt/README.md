@@ -349,6 +349,9 @@ print(table.concat(source, ''))
 
 ## Changelog
 
+* 5.2.0
+  * Generate a C++ class wrapper
+  * Removed the generated `#line` directives
 * 5.1.2
   * Log invalid transitions
 * 5.1.1

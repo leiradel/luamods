@@ -458,6 +458,9 @@ local function emit(fsm, path)
     out:write('}\n')
     out:write(fsm.id, '_State;\n\n')
 
+    -- Debug printf
+    out:write('typedef void (*', fsm.id, '_Vprintf)(void* const ud, char const* const fmt, va_list args);\n\n')
+
     -- The FSM state
     out:write('/* The FSM */\n')
     out:write('typedef struct {\n')
@@ -470,7 +473,7 @@ local function emit(fsm, path)
     out:write('\n')
     out:write('#ifdef DEBUG_FSM\n')
     out:write(idn, '/* Set those after calling ', fsm.id, '_Init when DEBUG_FSM is defined */\n')
-    out:write(idn, 'void (*vprintf)(void* const ud, char const* const fmt, va_list args);\n')
+    out:write(idn, fsm.id, '_Vprintf vprintf;\n')
     out:write(idn, 'void* vprintf_ud;\n')
     out:write('#endif\n')
     out:write('}\n')
@@ -510,6 +513,82 @@ local function emit(fsm, path)
     out:write('/* Debug */\n')
     out:write('#ifdef DEBUG_FSM\n')
     out:write('char const* ', fsm.id, '_StateName(', fsm.id, '_State const state);\n')
+    out:write('#endif\n\n')
+
+    -- C++
+    out:write('#ifdef __cplusplus\n')
+    out:write('class ', fsm.id, ' {\n')
+    out:write('public:\n')
+
+    out:write(idn, 'enum class State {\n')
+
+    for _, state in ipairs(fsm.states) do
+        out:write(idn, idn, state.id, ' = ', fsm.id, '_State_', state.id, ',\n')
+    end
+
+    out:write(idn, '};\n\n')
+
+    out:write(idn, fsm.id, '(')
+
+    for i, parameter in ipairs(fsm.parameters) do
+        out:write(i == 1 and '' or ', ', parameter.type, ' const ', parameter.id)
+    end
+
+    out:write(') { ', fsm.id, '_Init(&_fsm')
+
+    for _, parameter in ipairs(fsm.parameters) do
+        out:write(', ', parameter.id)
+    end
+
+    out:write('); }\n\n')
+
+    out:write('#ifdef DEBUG_FSM\n')
+    out:write(idn, fsm.id, '(')
+
+    for i, parameter in ipairs(fsm.parameters) do
+        out:write(i == 1 and '' or ', ', parameter.type, ' const ', parameter.id)
+    end
+
+    out:write(', ', fsm.id, '_Vprintf vprintf, void* vprintf_ud) : ', fsm.id, '(')
+
+    for i, parameter in ipairs(fsm.parameters) do
+        out:write(i == 1 and '' or ', ', parameter.id)
+    end
+
+    out:write(') {\n')
+    out:write(idn, idn, '_fsm.vprintf = vprintf;\n')
+    out:write(idn, idn, '_fsm.vprintf_ud = vprintf_ud;\n')
+    out:write(idn, '}\n')
+    out:write('#endif\n\n')
+
+    out:write(idn, 'State currentState() const { return (State)', fsm.id, '_CurrentState(&_fsm); }\n')
+    out:write(idn, 'bool canTransitionTo(State const next) const { return ', fsm.id, '_CanTransitionTo(&_fsm, (', fsm.id, '_State)next) != 0; }\n\n')
+
+    for _, transition in ipairs(allTransitions) do
+        out:write(idn, 'bool ', transition.id, '(')
+
+        for i, parameter in ipairs(transition.parameters) do
+            out:write(i == 1 and '' or ', ', parameter.type, ' ', parameter.id)
+        end
+
+        out:write(') { return ', fsm.id, '_Transition_', transition.id, '(&_fsm')
+
+        for _, parameter in ipairs(transition.parameters) do
+            out:write(', ', parameter.id)
+        end
+
+        out:write(') != 0; }\n')
+    end
+
+    out:write('\n')
+
+    out:write('#ifdef DEBUG_FSM\n')
+    out:write(idn, 'static char const* stateName(State const state) { return ', fsm.id, '_StateName((', fsm.id, '_State)state); }\n')
+    out:write('#endif\n\n')
+
+    out:write('protected:\n')
+    out:write(idn, fsm.id, '_Context _fsm;\n')
+    out:write('};\n')
     out:write('#endif\n\n')
 
     -- Finish up
