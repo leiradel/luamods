@@ -444,7 +444,6 @@ local function emit(fsm, path)
 
     -- Header free form code
     if fsm.header then
-        out:write('/*#line ', fsm.header.line, ' "', path, '"*/\n')
         out:write(fsm.header.lexeme, '\n\n')
     end
 
@@ -527,7 +526,6 @@ local function emit(fsm, path)
 
     -- Implementation free form code
     if fsm.implementation then
-        out:write('/*#line ', fsm.implementation.line, ' "', path, '"*/\n')
         out:write(fsm.implementation.lexeme, '\n\n')
     end
 
@@ -611,7 +609,6 @@ local function emit(fsm, path)
     out:write(idn, '(void)self;\n')
 
     if fsm.before then
-        out:write('/*#line ', fsm.before.line, ' "', path, '"*/\n')
         out:write(fsm.before.lexeme, '\n')
     end
 
@@ -634,7 +631,6 @@ local function emit(fsm, path)
         for _, state in ipairs(fsm.states) do
             if state.before then
                 out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-                out:write('/*#line ', state.before.line, ' "', path, '"*/\n')
                 out:write(state.before.lexeme, '\n')
                 out:write(idn, idn, '}\n')
                 out:write(idn, idn, 'break;\n');
@@ -653,7 +649,6 @@ local function emit(fsm, path)
     out:write(idn, '(void)self;\n')
 
     if fsm.after then
-        out:write('/*#line ', fsm.after.line, ' "', path, '"*/\n')
         out:write(fsm.after.lexeme, '\n')
     end
 
@@ -675,7 +670,6 @@ local function emit(fsm, path)
         for _, state in ipairs(fsm.states) do
             if state.after then
                 out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
-                out:write('/*#line ', state.after.line, ' "', path, '"*/\n')
                 out:write(state.after.lexeme, '\n')
                 out:write(idn, idn, '}\n')
                 out:write(idn, idn, 'break;\n');
@@ -731,7 +725,6 @@ local function emit(fsm, path)
             out:write(idn, idn, idn, '}\n\n')
 
             if transition2.precondition then
-                out:write('/*#line ', transition2.precondition.line, ' "', path, '"*/\n')
                 out:write(transition2.precondition.lexeme, '\n')
             end
 
