@@ -349,6 +349,8 @@ print(table.concat(source, ''))
 
 ## Changelog
 
+* 5.1.2
+  * Log invalid transitions
 * 5.1.1
   * Don't generate empty `switch` statements in `fsmc.lua`
 * 5.1.0

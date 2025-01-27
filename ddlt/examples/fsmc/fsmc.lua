@@ -795,6 +795,11 @@ local function emit(fsm, path)
 
         out:write(idn, idn, 'default: break;\n')
         out:write(idn, '}\n\n')
+        out:write(idn, 'PRINTF(\n')
+        out:write(idn, idn, 'self,\n')
+        out:write(idn, idn, '"FSM %s:%u Transition %s is invalid from state %s",\n');
+        out:write(idn, idn, '__FILE__, __LINE__, "', transition.id, '", LifeCycle_StateName(self->state)\n')
+        out:write(idn, ');\n\n')
         out:write(idn, 'return 0;\n')
         out:write('}\n\n')
     end
