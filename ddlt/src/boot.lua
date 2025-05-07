@@ -58,7 +58,7 @@ return function(ddlt)
 
     ddlt._COPYRIGHT = 'Copyright (C) 2017-2022 Andre Leiradella'
     ddlt._LICENSE = 'MIT'
-    ddlt._VERSION = '5.2.0'
+    ddlt._VERSION = '5.3.0'
     ddlt._NAME = 'ddlt'
     ddlt._URL = 'https://github.com/leiradel/luamods/ddlt'
     ddlt._DESCRIPTION = 'A generic lexer to help writing parsers using Lua'
