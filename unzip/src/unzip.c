@@ -94,7 +94,7 @@ static int l_read(lua_State* const L) {
             return 2;
         }
 
-        lua_pushvalue(L, 4);
+        lua_pushvalue(L, 3);
         lua_pushvalue(L, 3);
         lua_pushlstring(L, buffer, (size_t)num_read);
 
