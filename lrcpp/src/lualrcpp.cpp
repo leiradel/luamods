@@ -1,17 +1,436 @@
 #include <lualrcpp.h>
 
+#include "dynlib.h"
+
 #include <vector>
+#include <unordered_map>
+#include <string>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #define FRONTEND_MT "lrcpp::Frontend"
 
-lrcpp::Frontend* lrcpp::check(lua_State* const L, int const ndx) {
-    auto const self = *(lrcpp::Frontend**)luaL_checkudata(L, ndx, FRONTEND_MT);
+static void makeref(lua_State* const L, int const ndx, int* ref) {
+    luaL_unref(L, LUA_REGISTRYINDEX, *ref);
+    *ref = LUA_NOREF;
+
+    if (!lua_isnoneornil(L, ndx)) {
+        lua_pushvalue(L, ndx);
+        *ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    }
+}
+
+static bool retbool(lua_State* const L) {
+    bool const res = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+    return res;
+}
+
+static void callmethod(lua_State* const L, int const ref, char const* const name, int const nargs, int const nres) {
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+
+    if (lua_getfield(L, -1, name) == LUA_TNIL) {
+        lua_pop(L, nargs + 2);
+        return;
+    }
+
+    lua_insert(L, -nargs - 1);
+    lua_call(L, nargs, nres);
+}
+
+namespace {
+    struct Frontend {
+        lua_State* L;
+        lrcpp::Frontend* frontend;
+        dynlib_t core;
+        int logger_ref;
+        int config_ref;
+        int video_ref;
+        int led_ref;
+        int audio_ref;
+        int midi_ref;
+        int input_ref;
+        int rumble_ref;
+        int sensor_ref;
+        int camera_ref;
+        int location_ref;
+        int vfs_ref;
+        int diskctrl_ref;
+        int perf_ref;
+    };
+
+    struct Logger : public lrcpp::Logger {
+        ::Frontend* frontend;
+        std::vector<char> message;
+
+        Logger(::Frontend* frontend) : frontend(frontend) {}
+
+        virtual void vprintf(retro_log_level level, char const* format, va_list ap) override {
+            lua_State* const L = fontend->L;
+
+            va_list temp;
+            va_copy(temp, ap);
+            const int length = vsnprintf(nullptr, 0, fmt, temp);
+            va_end(temp);
+        
+            if (length < 0) {
+                return;
+            }
+
+            const size_t size = (size_t)length + 1; // null terminator
+
+            if (size > message.size()) {
+                message.resize(size);
+            }
+    
+            vsnprintf(message.data(), size, fmt, ap);
+
+            lua_pushinteger(L, level);
+            lua_pushstring(L, message.data());
+            callmethod(L, frontend->logger_ref, "print", 2, 0);
+        }
+    };
+
+    struct Config : public lrcpp::Config {
+        ::Frontend* frontend;
+        std::string systemdir, libretropath, coreassets, savedir;
+        std::string usrname;
+        std::unordered_map<std::string, std::string> variables;
+
+        Config(::Frontend* frontend) : frontend(frontend), systemdir_ref(LUA_NOREF) {}
+
+        virtual bool setPerformanceLevel(unsigned level) override {
+            lua_State* const L = fontend->L;
+
+            lua_pushinteger(L, level);
+            callmethod(L, frontend->config_ref, "setPerformanceLevel", 1, 1);
+            return retbool(L);
+        }
+
+        virtual bool getSystemDirectory(char const** directory) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getSystemDirectory", 0, 1);
+
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                *directory = nullptr;
+                return false;
+            }
+
+            systemdir = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            *directory = systemdir.c_str();
+            return true;
+        }
+
+        virtual bool getVariable(retro_variable* variable) override {
+            lua_State* const L = fontend->L;
+
+            lua_pushstring(L, variable->key);
+            callmethod(L, frontend->config_ref, "getVariable", 1, 1);
+
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                variable->value = nullptr;
+                return false;
+            }
+
+            std::string value = luatostring(L, -1);
+            var_refs[variable->key] = value;
+            variable->value = var_refs[variable->key].c_str();
+            return true;
+        }
+
+        virtual bool getVariableUpdate(bool* const updated) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getVariableUpdate", 0, 1);
+            *updated = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+            return true;
+        }
+
+        virtual bool setSupportNoGame(bool const supports) override {
+            (void)supports;
+            return false;
+        }
+
+        virtual bool getLibretroPath(char const** path) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getLibretroPath", 0, 1);
+
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                *path = nullptr;
+                return false;
+            }
+
+            libretropath = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            *path = libretropath.c_str();
+            return true;
+        }
+
+        virtual bool getCoreAssetsDirectory(char const** directory) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getCoreAssetsDirectory", 0, 1);
+
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                *directory = nullptr;
+                return false;
+            }
+
+            coreassets = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            *directory = coreassets.c_str();
+            return true;
+        }
+
+        virtual bool getSaveDirectory(char const** directory) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getSaveDirectory", 0, 1);
+
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                *directory = nullptr;
+                return false;
+            }
+
+            savedir = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            *directory = savedir.c_str();
+            return true;
+        }
+
+        virtual bool setProcAddressCallback(retro_get_proc_address_interface const* callback) override {
+            (void)callback;
+            return false;
+        }
+
+        virtual bool setSubsystemInfo(retro_subsystem_info const* info) {
+            (void)info;
+            return false;
+        }
+
+        virtual bool setMemoryMaps(retro_memory_map const* map) {
+            (void)map;
+            return false;
+        }
+
+        virtual bool getUsername(char const** username) {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getUsername", 0, 1);
+
+            if (!lua_isstring(L, -1)) {
+                lua_pop(L, 1);
+                *username = nullptr;
+                return false;
+            }
+
+            usrname = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            *username = usrname.c_str();
+            return true;
+        }
+
+        virtual bool getLanguage(unsigned* language) {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getLanguage", 0, 1);
+            *language = luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+            return true;
+        }
+
+        virtual bool setSupportAchievements(bool supports) override {
+            (void)supports;
+            return false;
+        }
+
+        virtual bool setSerializationQuirks(uint64_t quirks) override {
+            (void)quirks;
+            return false;
+        }
+
+        virtual bool getAudioVideoEnable(int* enabled) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getAudioVideoEnable", 0, 1);
+            *enabled = luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+            return true;
+        }
+
+        virtual bool getFastForwarding(bool* is) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getFastForwarding", 0, 1);
+            *is = lua_toboolean(L, -1);
+            lua_pop(L, 1);
+            return true;
+        }
+
+        bool getCoreOptionsVersion(unsigned* version) override {
+            lua_State* const L = fontend->L;
+
+            callmethod(L, frontend->config_ref, "getAudioVideoEnable", 0, 1);
+            *version = luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+            return true;
+        }
+
+        virtual bool setCoreOptions(retro_core_option_definition const* options) override {
+            (void)options;
+            return false;
+        }
+
+        virtual bool setCoreOptionsIntl(retro_core_options_intl const* intl) override {
+            (void)intl;
+            return false;
+        }
+
+        virtual bool setCoreOptionsDisplay(retro_core_option_display const* display) overrdide {
+            (void)display;
+            return false;
+        }
+    };
+}
+
+static Frontend* check(lua_State* const L, int const ndx) {
+    auto const self = (Frontend*)luaL_checkudata(L, ndx, FRONTEND_MT);
     return self;
 }
 
+lrcpp::Frontend* lrcpp::check(lua_State* const L, int const ndx) {
+    auto const self = (::Frontend*)luaL_checkudata(L, ndx, FRONTEND_MT);
+    return self->frontend;
+}
+
+#define REF(N, F) \
+    static int N(lua_State* const L) { \
+        auto const self = ::check(L, 1); \
+        makeref(L, 2, &self->F); \
+        lua_pushboolean(L, 1); \
+        return 1; \
+    }
+
+REF(l_setLogger, logger_ref)
+REF(l_setConfig, config_ref)
+REF(l_setVideo, video_ref)
+REF(l_setLed, led_ref)
+REF(l_setAudio, audio_ref)
+REF(l_setMidi, midi_ref)
+REF(l_setInput, input_ref)
+REF(l_setRumble, rumble_ref)
+REF(l_setSensor, sensor_ref)
+REF(l_setCamera, camera_ref)
+REF(l_setLocation, location_ref)
+REF(l_setVirtualFileSystem, vfs_ref)
+REF(l_setDiskControl, diskctrl_ref)
+REF(l_setPerf, perf_ref)
+
+static int l_loadCore(lua_State* const L) {
+    auto const self = ::check(L, 1);
+    auto const path = luaL_checkstring(L, 2);
+
+    if (self->core != nullptr) {
+        self->frontend->unset();
+        dynlib_close(self->core);
+        self->core = nullptr;
+    }
+
+    dynlib_t so = dynlib_open(path);
+
+    if (so == nullptr) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "could not load core from \"%s\"", path);
+        return 2;
+    }
+
+    #define DEF(f, n) \
+    do { \
+        core.f = reinterpret_cast<decltype(core.f)>(dynlib_symbol(so, n)); \
+        if (core.f == nullptr) { \
+            dynlib_close(so); \
+            lua_pushnil(L);
+            lua_pushfstring(L, "could not find symbol \"%s\" in core \"%s\"", n, path); \
+            return 2; \
+        } \
+    } while (0)
+
+    lrcpp::Core core = {};
+    DEF(init,                    "retro_init");
+    DEF(deinit,                  "retro_deinit");
+    DEF(apiVersion,              "retro_api_version");
+    DEF(getSystemInfo,           "retro_get_system_info");
+    DEF(getSystemAvInfo,         "retro_get_system_av_info");
+    DEF(setEnvironment,          "retro_set_environment");
+    DEF(setVideoRefresh,         "retro_set_video_refresh");
+    DEF(setAudioSample,          "retro_set_audio_sample");
+    DEF(setAudioSampleBatch,     "retro_set_audio_sample_batch");
+    DEF(setInputPoll,            "retro_set_input_poll");
+    DEF(setInputState,           "retro_set_input_state");
+    DEF(setControllerPortDevice, "retro_set_controller_port_device");
+    DEF(reset,                   "retro_reset");
+    DEF(run,                     "retro_run");
+    DEF(serializeSize,           "retro_serialize_size");
+    DEF(serialize,               "retro_serialize");
+    DEF(unserialize,             "retro_unserialize");
+    DEF(cheatReset,              "retro_cheat_reset");
+    DEF(cheatSet,                "retro_cheat_set");
+    DEF(loadGame,                "retro_load_game");
+    DEF(loadGameSpecial,         "retro_load_game_special");
+    DEF(unloadGame,              "retro_unload_game");
+    DEF(getRegion,               "retro_get_region");
+    DEF(getMemoryData,           "retro_get_memory_data");
+    DEF(getMemorySize,           "retro_get_memory_size");
+
+#undef DEF
+
+    if (!self->frontend->setCore(&core)) {
+        dynlib_close(so);
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "setCore");
+        return 2;
+    }
+
+    self->core = so;
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int l_unloadCore(lua_State* const L) {
+    auto const self = ::check(L, 1);
+
+    if (self->core == nullptr) {
+        lua_pushnil(L);
+        lua_pushliteal(L, "core was not set");
+        return 2;
+    }
+
+    if (!self->frontend->unset()) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "unset");
+        return 2;
+    }
+
+    dynlib_close(self->core);
+    self->core = nullptr;
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_loadGame(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
     bool ok = false;
 
     if (lua_isstring(L, 2)) {
@@ -21,25 +440,28 @@ static int l_loadGame(lua_State* const L) {
             size_t size = 0;
             char const* const data = luaL_checklstring(L, 3, &size);
 
-            ok = self->loadGame(path, (void const*)data, size);
+            ok = self->frontend->loadGame(path, (void const*)data, size);
         }
         else {
-            ok = self->loadGame(path);
+            ok = self->frontend->loadGame(path);
         }
     }
     else {
-        ok = self->loadGame();
+        ok = self->frontend->loadGame();
     }
 
     if (!ok) {
-        return luaL_error(L, "error in %s", "loadGame");
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "loadGame");
+        return 2;
     }
 
-    return 0;
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 static int l_loadGameSpecial(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
     lua_Integer const game_type = luaL_checkinteger(L, 2);
 
     int const top = lua_gettop(L);
@@ -60,18 +482,26 @@ static int l_loadGameSpecial(lua_State* const L) {
         infos.emplace_back(info);
     }
 
-    if (!self->loadGameSpecial(game_type, infos.data(), infos.size())) {
-        return luaL_error(L, "error in %s", "loadGameSpecial");
+    if (!self->frontend->loadGameSpecial(game_type, infos.data(), infos.size())) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "loadGameSpecial");
+        return 2;
     }
 
-    return 0;
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 #define NO_ARG(S) \
     static int l_ ## S(lua_State* const L) { \
-        auto const self = lrcpp::check(L, 1); \
-        if (!self->S()) return luaL_error(L, "error in %s", #S); \
-        return 0; \
+        auto const self = ::check(L, 1); \
+        if (!self->frontend->S()) { \
+            lua_pushnil(L); \
+            lua_pushfstring(L, "error in %s", #S); \
+            return 2; \
+        } \
+        lua_pushboolean(L, 1); \
+        return 1; \
     }
 
 NO_ARG(run)
@@ -80,10 +510,14 @@ NO_ARG(unloadGame)
 
 #define ARG_UNSIGNED_PTR(S) \
     static int l_ ## S(lua_State* const L) { \
-        auto const self = lrcpp::check(L, 1); \
+        auto const self = ::check(L, 1); \
         unsigned res = 0; \
-        if (!self->S(&res)) return luaL_error(L, "error in %s", #S); \
-        lua_pushinteger(L, res); \
+        if (!self->frontend->S(&res)) { \
+            lua_pushnil(L); \
+            lua_pushfstring(L, "error in %s", #S); \
+            return 2; \
+        } \
+        lua_pushboolean(L, 1); \
         return 1; \
     }
 
@@ -92,12 +526,14 @@ NO_ARG(cheatReset)
 ARG_UNSIGNED_PTR(getRegion)
 
 static int l_getSystemInfo(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
 
     retro_system_info info = {};
 
-    if (!self->getSystemInfo(&info)) {
-        return luaL_error(L, "error in %s", "getSystemInfo");
+    if (!self->frontend->getSystemInfo(&info)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "getSystemInfo");
+        return 2;
     }
 
     lua_pushstring(L, info.library_name);
@@ -110,12 +546,14 @@ static int l_getSystemInfo(lua_State* const L) {
 }
 
 static int l_getSystemAvInfo(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
 
     retro_system_av_info info = {};
 
-    if (!self->getSystemAvInfo(&info)) {
-        return luaL_error(L, "error in %s", "getSystemAvInfo");
+    if (!self->frontend->getSystemAvInfo(&info)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "getSystemAvInfo");
+        return 2;
     }
 
     lua_pushinteger(L, info.geometry.base_width);
@@ -131,12 +569,14 @@ static int l_getSystemAvInfo(lua_State* const L) {
 }
 
 static int l_serializeSize(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
 
     size_t size = 0;
 
-    if (!self->serializeSize(&size)) {
-        return luaL_error(L, "error in %s", "serializeSize");
+    if (!self->frontend->serializeSize(&size)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "serializeSize");
+        return 2;
     }
 
     lua_pushinteger(L, size);
@@ -144,23 +584,29 @@ static int l_serializeSize(lua_State* const L) {
 }
 
 static int l_serialize(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
 
     size_t size = 0;
 
-    if (!self->serializeSize(&size)) {
-        return luaL_error(L, "error in %s", "serializeSize");
+    if (!self->frontend->serializeSize(&size)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "serializeSize");
+        return 2;
     }
 
     void* const data = malloc(size);
 
     if (data == nullptr) {
-        return luaL_error(L, "error allocating memory for the state");
+        lua_pushnil(L);
+        lua_pushfstring(L, "error allocating memory for the state");
+        return 2;
     }
 
-    if (!self->serialize(data, size)) {
+    if (!self->frontend->serialize(data, size)) {
         free(data);
-        return luaL_error(L, "error in %s", "serialize");
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "serialize");
+        return 2;
     }
 
     lua_pushlstring(L, (char const*)data, size);
@@ -168,45 +614,55 @@ static int l_serialize(lua_State* const L) {
 }
 
 static int l_unserialize(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
 
     size_t size = 0;
     char const* const data = luaL_checklstring(L, 2, &size);
 
-    if (!self->unserialize((void const*)data, size)) {
-        return luaL_error(L, "error in %s", "unserialize");
+    if (!self->frontend->unserialize((void const*)data, size)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "unserialize");
+        return 2;
     }
 
-    return 0;
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 static int l_cheatSet(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
     lua_Integer const index = luaL_checkinteger(L, 2);
     bool const enabled = lua_toboolean(L, 3) != 0;
     char const* const code = luaL_checkstring(L, 4);
 
-    if (!self->cheatSet(index, enabled, code)) {
-        return luaL_error(L, "error in %s", "cheatSet");
+    if (!self->frontend->cheatSet(index, enabled, code)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "cheatSet");
+        return 2;
     }
 
-    return 0;
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 static int l_getMemoryData(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
     lua_Integer const id = luaL_checkinteger(L, 2);
 
     size_t size = 0;
 
-    if (!self->getMemorySize(id, &size)) {
-        return luaL_error(L, "error in %s", "getMemorySize");
+    if (!self->frontend->getMemorySize(id, &size)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "getMemorySize");
+        return 2;
     }
 
     void* data = nullptr;
 
-    if (!self->getMemoryData(id, &data)) {
-        return luaL_error(L, "error in %s", "getMemoryData");
+    if (!self->frontend->getMemoryData(id, &data)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "getMemoryData");
+        return 2;
     }
 
     lua_pushlstring(L, (char const*)data, size);
@@ -214,12 +670,12 @@ static int l_getMemoryData(lua_State* const L) {
 }
 
 static int l_getMemorySize(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
     lua_Integer const id = luaL_checkinteger(L, 2);
 
     size_t size = 0;
 
-    if (!self->getMemorySize(id, &size)) {
+    if (!self->frontend->getMemorySize(id, &size)) {
         return luaL_error(L, "error in %s", "getMemorySize");
     }
 
@@ -228,24 +684,55 @@ static int l_getMemorySize(lua_State* const L) {
 }
 
 static int l_setControllerPortDevice(lua_State* const L) {
-    auto const self = lrcpp::check(L, 1);
+    auto const self = ::check(L, 1);
     lua_Integer const port = luaL_checkinteger(L, 2);
     lua_Integer const device = luaL_checkinteger(L, 3);
 
-    if (!self->setControllerPortDevice(port, device)) {
-        return luaL_error(L, "error in %s", "setControllerPortDevice");
+    if (!self->frontend->setControllerPortDevice(port, device)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "error in %s", "setControllerPortDevice");
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int l_gc(lua_State* const L) {
+    auto const self = ::check(L, 1);
+
+    if (self->core != nullptr) {
+        self->frontend->unset();
+        dynlib_close(self->core);
     }
 
     return 0;
 }
 
 int lrcpp::push(lua_State* const L, lrcpp::Frontend* frontend) {
-    auto const self = (lrcpp::Frontend**)lua_newuserdata(L, sizeof(lrcpp::Frontend*));
-    *self = frontend;
+    auto const self = (::Frontend*)lua_newuserdata(L, sizeof(::Frontend));
+    self->frontend = frontend;
+    self->core = nullptr;
+    self->logger_ref = LUA_NOREF;
+    self->config_ref = LUA_NOREF;
+    self->video_ref; = LUA_NOREF;
+    self->led_ref = LUA_NOREF;
+    self->audio_ref = LUA_NOREF;
+    self->midi_ref = LUA_NOREF;
+    self->input_ref = LUA_NOREF;
+    self->rumble_ref = LUA_NOREF;
+    self->sensor_ref = LUA_NOREF;
+    self->camera_ref = LUA_NOREF;
+    self->location_ref = LUA_NOREF;
+    self->vfs_ref = LUA_NOREF;
+    self->diskctrl_ref = LUA_NOREF;
+    self->perf_ref = LUA_NOREF;
 
     if (luaL_newmetatable(L, FRONTEND_MT)) {
         static luaL_Reg const methods[] = {
             // Core life-cycle
+            {"loadCore", l_loadCore},
+            {"unloadCore", l_unloadCore},
             {"loadGame", l_loadGame},
             {"loadGameSpecial", l_loadGameSpecial},
             {"run", l_run},
@@ -269,10 +756,18 @@ int lrcpp::push(lua_State* const L, lrcpp::Frontend* frontend) {
 
         luaL_newlib(L, methods);
         lua_setfield(L, -2, "__index");
+
+        lua_pushcfunction(L, l_gc);
+        lua_setfield(L, -2, "__gc");
     }
 
     lua_setmetatable(L, -2);
     return 1;
+}
+
+static int l_create(lua_State* const L) {
+    auto const self = new lrcpp::Frontend;
+    return lrcpp::push(L, self);
 }
 
 int lrcpp::openf(lua_State* const L) {
@@ -746,6 +1241,9 @@ int lrcpp::openf(lua_State* const L) {
         lua_pushstring(L, info[i].value);
         lua_setfield(L, -2, info[i].name);
     }
+
+    lua_pushcfunction(L, l_create);
+    lua_setfield(L, -2, "create");
 
     return 1;
 }
