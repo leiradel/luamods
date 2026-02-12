@@ -398,6 +398,7 @@ static int l_gc(lua_State* const L) {
 #include "lexer_cpp.c"
 #include "lexer_bas.c"
 #include "lexer_pas.c"
+#include "lexer_asm.c"
 
 static int init_source(lua_State* const L, Lexer* const self) {
     lua_getfield(L, 1, "source");
@@ -451,7 +452,7 @@ static int init_symbol_chars(lua_State* const L, Lexer* const self) {
             for (char const* aux = symbol; *aux != 0; aux++) {
                 unsigned char const k = (unsigned char)*aux;
 
-                if (k >= 32 && k < 256) {
+                if (k >= 32) {
                     used[k - 32] = 1;
                 }
             }
@@ -495,6 +496,9 @@ static int init_language(lua_State* const L, Lexer* const self) {
     }
     else if (!strcmp(language, "pas")) {
         pas_setup_lexer(self);
+    }
+    else if (!strcmp(language, "asm")) {
+        asm_setup_lexer(self);
     }
     else {
         return luaL_error(L, "invalid language %s", language);

@@ -73,6 +73,17 @@ The tokenizer recognizes:
     * `[0-9]+[Ee][+-]?[0-9]+` as float literals
     * `[0-9]+\.[0-9]+[Ee][+-]?[0-9]+` as float literals
   * Strings, where `#[0-9]+` can appear anywhere outside the single quotes to denote a character corresponding to the given number, i.e. `#65'B'` is equivalent to `'AB'`.
+* **Assembly**
+  * Line comments from `;` to the end of the line.
+  * Block comments from `comment <delimiter>` to `<delimiter>`
+  * Identifiers in the form `[A-Za-z_@?][A-Za-z_@?0-9]*`.
+  * Numbers in the form:
+    * `[0-9][0-9A-Fa-f]*[Hh]` as hexadecimal literals
+    * `0[A-Fa-f][0-9A-Fa-f]*[Hh]` as hexadecimal literals
+    * `[0-9]+` as decimal literals
+    * `[0-7]+[Oo]` as octal literals
+    * `[01]+[Bb]` as binary literals
+  * Strings, where `""` is interpreted as a single quote inside the string.
 
 The tokenizer can also recognize and return *freeform* blocks, using user-defined delimiters, and which can have any content inside these delimiters.
 
@@ -247,7 +258,7 @@ Your parser can require **ddlt** to access functions to tokenize an input source
 * `source`: a string with the entire source code that will be tokenized.
 * `file`: a string with the name of the object used to create the source code (usually the file name from where the source code was read, this is used in error messages).
 * `symbol`: an array of valid symbols.
-* `language`: a string containing the language used to parse identifiers, string and number literals, and comments. Supported languages are `'cpp'` for **C++**, `'bas'` for **BASIC**, and `'pas'` for **Pascal**.
+* `language`: a string containing the language used to parse identifiers, string and number literals, and comments. Supported languages are `'cpp'` for **C++**, `'bas'` for **BASIC**, `'pas'` for **Pascal**, and `'asm'` for **Assembly**.
 * `freeform`: an array where each element is a table with two elements, the *freeform* delimiters to recognize freeform blocks.
 
 Optionally, the table can have these fields:
@@ -349,6 +360,8 @@ print(table.concat(source, ''))
 
 ## Changelog
 
+* 5.4.0
+  * Added support for Assembly
 * 5.3.0
   * Added transitioning log messages
 * 5.2.0
