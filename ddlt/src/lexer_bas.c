@@ -16,7 +16,7 @@ static int bas_get_id(lua_State* const L, Lexer* const self) {
     size_t const length = self->source - lexeme;
 
     if (length == 3 && tolower(lexeme[0]) == 'r' && tolower(lexeme[1]) == 'e' && tolower(lexeme[2]) == 'm') {
-        self->source -= 3;
+        self->source -= length;
 
         Block block;
         block.type = LINE_COMMENT;
