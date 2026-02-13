@@ -408,6 +408,10 @@ local function validate(fsm, path)
     end
 end
 
+local function toUpperSnake(str)
+    return str:gsub('(%l)(%u)', '%1_%2'):upper()
+end
+
 local function emit(fsm, path)
     local idn = '    '
 
@@ -452,11 +456,22 @@ local function emit(fsm, path)
     out:write('typedef enum {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, fsm.id, '_State_', state.id, ',\n')
+        out:write(idn, fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ',\n')
     end
 
     out:write('}\n')
     out:write(fsm.id, '_State;\n\n')
+
+    -- The transitions enumeration
+    out:write('/* FSM transitions */\n')
+    out:write('typedef enum {\n')
+
+    for _, transition in ipairs(allTransitions) do
+        out:write(idn, fsm.id:upper(), '_TRANSITION_', toUpperSnake(transition.id), ',\n')
+    end
+
+    out:write('}\n')
+    out:write(fsm.id, '_Transition;\n\n')
 
     -- Debug printf
     out:write('typedef void (*', fsm.id, '_Vprintf)(void* const ud, char const* const fmt, va_list args);\n\n')
@@ -492,7 +507,8 @@ local function emit(fsm, path)
     -- Query functions
     out:write('/* Query */\n')
     out:write(fsm.id, '_State ', fsm.id, '_CurrentState(', fsm.id, '_Context const* const self);\n')
-    out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next);\n\n')
+    out:write('int ', fsm.id, '_CanTransitionTo(', fsm.id, '_Context const* const self, ', fsm.id, '_State const next);\n')
+    out:write('int ', fsm.id, '_CanUseTransition(', fsm.id, '_Context const* const self, ', fsm.id, '_Transition const transition);\n\n')
 
     -- Transitions
     out:write('/* Transitions */\n')
@@ -513,6 +529,7 @@ local function emit(fsm, path)
     out:write('/* Debug */\n')
     out:write('#ifdef DEBUG_FSM\n')
     out:write('char const* ', fsm.id, '_StateName(', fsm.id, '_State const state);\n')
+    out:write('char const* ', fsm.id, '_TransitionName(', fsm.id, '_Transition const transition);\n')
     out:write('#endif\n\n')
 
     -- C++
@@ -523,7 +540,15 @@ local function emit(fsm, path)
     out:write(idn, 'enum class State {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, state.id, ' = ', fsm.id, '_State_', state.id, ',\n')
+        out:write(idn, idn, state.id, ' = ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ',\n')
+    end
+
+    out:write(idn, '};\n\n')
+
+    out:write(idn, 'enum class Transition {\n')
+
+    for _, transition in ipairs(allTransitions) do
+        out:write(idn, idn, transition.id, ' = ', fsm.id:upper(), '_TRANSITION_', toUpperSnake(transition.id), ',\n')
     end
 
     out:write(idn, '};\n\n')
@@ -562,7 +587,8 @@ local function emit(fsm, path)
     out:write('#endif\n\n')
 
     out:write(idn, 'State currentState() const { return (State)', fsm.id, '_CurrentState(&_fsm); }\n')
-    out:write(idn, 'bool canTransitionTo(State const next) const { return ', fsm.id, '_CanTransitionTo(&_fsm, (', fsm.id, '_State)next) != 0; }\n\n')
+    out:write(idn, 'bool canTransitionTo(State const next) const { return ', fsm.id, '_CanTransitionTo(&_fsm, (', fsm.id, '_State)next) != 0; }\n')
+    out:write(idn, 'bool canUseTransition(Transition const transition) const { return ', fsm.id, '_CanUseTransition(&_fsm, (', fsm.id, '_Transition)transition) != 0; }\n\n')
 
     for _, transition in ipairs(allTransitions) do
         out:write(idn, 'bool ', transition.id, '(')
@@ -584,6 +610,7 @@ local function emit(fsm, path)
 
     out:write('#ifdef DEBUG_FSM\n')
     out:write(idn, 'static char const* stateName(State const state) { return ', fsm.id, '_StateName((', fsm.id, '_State)state); }\n')
+    out:write(idn, 'static char const* transitionName(Transition const transition) { return ', fsm.id, '_TransitionName((', fsm.id, '_Transition)transition); }\n')
     out:write('#endif\n\n')
 
     out:write('protected:\n')
@@ -632,7 +659,7 @@ local function emit(fsm, path)
     end
 
     out:write(') {\n')
-    out:write(idn, 'self->state = ', fsm.id, '_State_', fsm.begin, ';\n\n')
+    out:write(idn, 'self->state = ', fsm.id:upper(), '_STATE_', toUpperSnake(fsm.begin), ';\n\n')
 
     for _, parameter in ipairs(fsm.parameters) do
         out:write(idn, 'self->', parameter.id, ' = ', parameter.id, ';\n')
@@ -649,7 +676,7 @@ local function emit(fsm, path)
     out:write(idn, 'switch (self->state) {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ':\n')
+        out:write(idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ':\n')
 
         if #state.transitions ~= 0 then
             out:write(idn, idn, idn, 'switch (next) {\n')
@@ -667,7 +694,33 @@ local function emit(fsm, path)
             table.sort(sorted, function(id1, id2) return id1 < id2 end)
 
             for _, stateId in ipairs(sorted) do
-                out:write(idn, idn, idn, idn, 'case ', fsm.id, '_State_', stateId, ':\n')
+                out:write(idn, idn, idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(stateId), ':\n')
+            end
+
+            out:write(idn, idn, idn, idn, idn, 'return 1;\n')
+            out:write(idn, idn, idn, idn, 'default: break;\n')
+            out:write(idn, idn, idn, '}\n')
+        end
+
+        out:write(idn, idn, idn, 'break;\n\n')
+    end
+
+    out:write(idn, idn, 'default: break;\n')
+    out:write(idn, '}\n\n')
+    out:write(idn, 'return 0;\n')
+    out:write('}\n\n')
+
+    out:write('int ', fsm.id, '_CanUseTransition(', fsm.id, '_Context const* const self, ', fsm.id, '_Transition const transition) {\n')
+    out:write(idn, 'switch (self->state) {\n')
+
+    for _, state in ipairs(fsm.states) do
+        out:write(idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ':\n')
+
+        if #state.transitions ~= 0 then
+            out:write(idn, idn, idn, 'switch (transition) {\n')
+
+            for _, transition in ipairs(state.transitions) do
+                out:write(idn, idn, idn, idn, 'case ', fsm.id:upper(), '_TRANSITION_', toUpperSnake(transition.id), ':\n')
             end
 
             out:write(idn, idn, idn, idn, idn, 'return 1;\n')
@@ -709,7 +762,7 @@ local function emit(fsm, path)
 
         for _, state in ipairs(fsm.states) do
             if state.before then
-                out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
+                out:write(idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ': {\n')
                 out:write(state.before.lexeme, '\n')
                 out:write(idn, idn, '}\n')
                 out:write(idn, idn, 'break;\n');
@@ -748,7 +801,7 @@ local function emit(fsm, path)
 
         for _, state in ipairs(fsm.states) do
             if state.after then
-                out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
+                out:write(idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ': {\n')
                 out:write(state.after.lexeme, '\n')
                 out:write(idn, idn, '}\n')
                 out:write(idn, idn, 'break;\n');
@@ -785,7 +838,7 @@ local function emit(fsm, path)
         for _, state in ipairs(valid) do
             local transition2 = state.transitions[transition.id]
 
-            out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': {\n')
+            out:write(idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ': {\n')
             out:write(idn, idn, idn, 'PRINTF(\n')
             out:write(idn, idn, idn, idn, 'self,\n')
             out:write(idn, idn, idn, idn, '"FSM %s:%u Transitioning from %s to %s via %s",\n')
@@ -813,7 +866,7 @@ local function emit(fsm, path)
             end
 
             if transition2.type == 'state' then
-                out:write(idn, idn, idn, 'self->state = ', fsm.id, '_State_', transition2.target.id, ';\n\n')
+                out:write(idn, idn, idn, 'self->state = ', fsm.id:upper(), '_STATE_', toUpperSnake(transition2.target.id), ';\n\n')
             elseif transition2.type == 'sequence' then
                 local arguments = function(args)
                     local list = {'self'}
@@ -887,12 +940,25 @@ local function emit(fsm, path)
     out:write(idn, 'switch (state) {\n')
 
     for _, state in ipairs(fsm.states) do
-        out:write(idn, idn, 'case ', fsm.id, '_State_', state.id, ': return "', state.id, '";\n')
+        out:write(idn, idn, 'case ', fsm.id:upper(), '_STATE_', toUpperSnake(state.id), ': return "', state.id, '";\n')
     end
 
     out:write(idn, idn, 'default: break;\n')
     out:write(idn, '}\n\n')
     out:write(idn, 'return "unknown state";\n')
+    out:write('}\n\n')
+
+    -- Transition name
+    out:write('const char* ', fsm.id, '_TransitionName(', fsm.id, '_Transition const transition) {\n')
+    out:write(idn, 'switch (transition) {\n')
+
+    for _, transition in ipairs(allTransitions) do
+        out:write(idn, idn, 'case ', fsm.id:upper(), '_TRANSITION_', toUpperSnake(transition.id), ': return "', transition.id, '";\n')
+    end
+
+    out:write(idn, idn, 'default: break;\n')
+    out:write(idn, '}\n\n')
+    out:write(idn, 'return "unknown transition";\n')
     out:write('}\n')
     out:write('#endif\n')
 
