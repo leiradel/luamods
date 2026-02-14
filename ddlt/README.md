@@ -363,6 +363,7 @@ print(table.concat(source, ''))
 * 5.5.0
   * Added a function to test if a transition is available from the current state
   * Capitalized all enumeration values to avoid clashes with function names
+  * Removed the forced FSM header include in the generated C
   * Fixed the example test.fsm to use the new syntax (which was update a white ago)
 * 5.4.0
   * Added support for Assembly
